@@ -350,8 +350,9 @@ function showManageGroup() {
     window.LOGO_FILE = null;
     var ls = document.getElementById('loginSection');
     var logo = grupoAtual.logo_url || SYSTEM_LOGO;
-    ls.innerHTML = '<div class="login-page"><div class="login-card"><div class="login-header"><h2>Gerenciar Grupo</h2><p>Nome e logo do grupo</p></div><div class="login-body"><div id="manageGroupForm"><div style="text-align:center;margin-bottom:12px;"><img id="manageLogoPreview" src="' + escAttr(logo) + '" alt="Logo do grupo" style="max-width:120px;border-radius:12px;"></div><div class="form-group"><label for="manageGroupName">Nome do grupo</label><input type="text" id="manageGroupName" value="' + escAttr(grupoAtual.nome) + '"></div><div class="form-group"><label for="manageGroupLogo">Nova logo (URL ou arquivo)</label><input type="text" id="manageGroupLogo" value="" placeholder="Cole a URL ou escolha um arquivo"><input type="file" id="manageGroupLogoFile" accept="image/*" style="margin-top:8px;"></div><button class="btn-primary" onclick="doSaveGroup()">Salvar</button><p class="login-hint"><a href="#" onclick="onAuthStateChanged(AUTH.user); return false;">Voltar</a></p></div><div id="manageGroupLoading" style="display:none;"><p>Salvando...</p></div><div id="manageGroupStatus"></div></div></div></div>';
+    ls.innerHTML = '<div class="login-page"><div class="login-card"><div class="login-header"><h2>Gerenciar Grupo</h2><p>Nome e logo do grupo</p></div><div class="login-body"><div id="manageGroupForm"><div style="text-align:center;margin-bottom:12px;"><img id="manageLogoPreview" src="' + escAttr(logo) + '" alt="Logo do grupo" style="max-width:120px;border-radius:12px;"></div><div class="form-group"><label for="manageGroupName">Nome do grupo</label><input type="text" id="manageGroupName" value="' + escAttr(grupoAtual.nome) + '"></div><div class="form-group"><label for="manageGroupLogo">Nova logo (URL ou arquivo)</label><input type="text" id="manageGroupLogo" value="" placeholder="Cole a URL ou escolha um arquivo"><input type="file" id="manageGroupLogoFile" accept="image/*" style="margin-top:8px;"></div><button class="btn-primary" onclick="doSaveGroup()">Salvar</button><p class="login-hint"><a href="#" onclick="onAuthStateChanged(AUTH.user); return false;">Voltar</a></p></div><div id="manageGroupLoading" style="display:none;"><p>Salvando...</p></div><div id="manageGroupStatus"></div><div class="pending-panel" style="margin-top:16px;"><h3>Solicitações pendentes</h3><div id="managePendingList"><p class="login-hint">Carregando...</p></div></div></div></div></div>';
     ls.style.display = 'block';
+    carregarPendentesManage();
     var fileInput = document.getElementById('manageGroupLogoFile');
     if (fileInput) fileInput.addEventListener('change', function() {
         var f = fileInput.files && fileInput.files[0];
@@ -403,6 +404,34 @@ function doSaveGroup() {
         /* Campo vazio e sem arquivo: mantem a logo atual. */
         finish(logoTyped || grupoAtual.logo_url || SYSTEM_LOGO);
     }
+}
+
+/* Esteira de aprovacao dentro do Gerenciar grupo (grava no banco). */
+function carregarPendentesManage() {
+    var box = document.getElementById('managePendingList');
+    if (!box || !grupoAtual) return;
+    box.innerHTML = '<p class="login-hint">Carregando...</p>';
+    getPendingRequests(grupoAtual.id).then(function(reqs) {
+        if (!reqs || !reqs.length) { box.innerHTML = '<p class="login-hint">Nenhuma solicitação pendente.</p>'; return; }
+        box.innerHTML = reqs.map(function(p) {
+            return '<div class="pending-item"><span class="pending-email">' + escAttr(p.email) + '</span><span class="pending-actions"><button class="btn-success btn-compact" onclick="doApproveManage(\'' + p.id + '\')">Aprovar</button> <button class="btn-secondary btn-compact" onclick="doRejectManage(\'' + p.id + '\')">Recusar</button></span></div>';
+        }).join('');
+    });
+}
+
+function doApproveManage(requestId) {
+    approveUser(requestId).then(function(r) {
+        if (!r.success) { alert('Erro: ' + r.error); return; }
+        carregarPendentesManage();
+    });
+}
+
+function doRejectManage(requestId) {
+    if (!confirm('Recusar este pedido?')) return;
+    rejectUser(requestId).then(function(r) {
+        if (!r.success) { alert('Erro: ' + r.error); return; }
+        carregarPendentesManage();
+    });
 }
 
 function doApprove(requestId) {    approveUser(requestId).then(function(r) {
