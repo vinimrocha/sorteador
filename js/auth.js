@@ -782,6 +782,7 @@ function loginWithEmail(email, password) {
 function logout() {
     PENDING_SIGNUP = null;
     window.LOGO_FILE = null;
+    window.JOIN_SLUG = null;
     supabaseClient.auth.signOut().then(function() { AUTH.user = null; AUTH.session = null; onAuthStateChanged(null); }).catch(function(err) { console.error('Erro ao logout:', err); });
 }
 
@@ -836,7 +837,30 @@ function showJoinGroup() {
     if (!ls) return;
     var email = PENDING_SIGNUP ? PENDING_SIGNUP.email : (AUTH.user ? AUTH.user.email : '');
     var username = PENDING_SIGNUP ? PENDING_SIGNUP.username : (displayName() || '');
-    ls.innerHTML = '<div class="login-page"><div class="login-card"><img src="sorteador-logo.png" alt="Sorteador de Times" class="login-logo"><div class="login-header"><h2>Entrar em Grupo</h2><p>O owner precisa aprovar seu pedido</p></div><div class="login-body"><div id="joinGroupForm"><div class="form-group"><label for="joinUsername">Seu nome de usuario</label><input type="text" id="joinUsername" placeholder="Seu nome" value="' + username + '"></div><div class="form-group"><label for="joinEmail">Seu e-mail</label><input type="email" id="joinEmail" placeholder="seu@email.com" value="' + email + '"></div><div class="form-group"><label for="joinPassword">Sua senha</label><input type="password" id="joinPassword" placeholder="Sua senha"></div><div class="form-group"><label for="joinSlug">Codigo do grupo</label><input type="text" id="joinSlug" placeholder="ex: boleiros-de-cristo" autocomplete="off"></div><button class="btn-primary" onclick="doJoinGroup()">Pedir acesso</button><p class="login-hint"><a href="#" onclick="showGroupChoice(); return false;">Voltar</a></p></div><div id="joinGroupLoading" style="display:none;"><p>Solicitando...</p></div><div id="joinGroupStatus"></div></div></div></div>';
+    ls.innerHTML = '<div class="login-page"><div class="login-card"><img src="sorteador-logo.png" alt="Sorteador de Times" class="login-logo"><div class="login-header"><h2>Entrar em Grupo</h2><p>O owner precisa aprovar seu pedido</p></div><div class="login-body"><div id="joinGroupForm"><div class="form-group"><label for="joinUsername">Seu nome de usuario</label><input type="text" id="joinUsername" placeholder="Seu nome" value="' + username + '"></div><div class="form-group"><label for="joinEmail">Seu e-mail</label><input type="email" id="joinEmail" placeholder="seu@email.com" value="' + email + '"></div><div class="form-group"><label for="joinPassword">Sua senha</label><input type="password" id="joinPassword" placeholder="Sua senha"></div><div class="form-group"><label>Escolha o grupo</label><div id="joinGroupList"><p class="login-hint">Carregando grupos...</p></div></div><button class="btn-primary" onclick="doJoinGroup()">Pedir acesso</button><p class="login-hint"><a href="#" onclick="showGroupChoice(); return false;">Voltar</a></p></div><div id="joinGroupLoading" style="display:none;"><p>Solicitando...</p></div><div id="joinGroupStatus"></div></div></div></div>';
+    window.JOIN_SLUG = null;
+    loadJoinGroups();
+}
+
+/* Lista de grupos para o novo usuario escolher onde pedir acesso. */
+function loadJoinGroups() {
+    var box = document.getElementById('joinGroupList');
+    if (!box) return;
+    supabaseClient.from('grupos').select('id, nome, slug, logo_url').order('nome').then(function(r) {
+        if (r.error) { box.innerHTML = '<p class="login-error">Erro ao carregar grupos: ' + r.error.message + '</p>'; return; }
+        if (!r.data || !r.data.length) { box.innerHTML = '<p class="login-hint">Nenhum grupo disponivel.</p>'; return; }
+        box.innerHTML = r.data.map(function(g) {
+            var logo = g.logo_url || SYSTEM_LOGO;
+            return '<div class="group-option" data-slug="' + g.slug + '" onclick="selectJoinGroup(\'' + g.slug + '\', this)"><img src="' + escAttr(logo) + '" alt="" width="40" height="40"><span>' + escAttr(g.nome) + '</span></div>';
+        }).join('');
+    }).catch(function() { box.innerHTML = '<p class="login-error">Erro ao carregar grupos.</p>'; });
+}
+
+function selectJoinGroup(slug, el) {
+    window.JOIN_SLUG = slug;
+    var items = document.querySelectorAll('#joinGroupList .group-option');
+    items.forEach(function(i) { i.classList.remove('selected'); });
+    if (el) el.classList.add('selected');
 }
 
 function doLogin() {
@@ -936,11 +960,11 @@ function doJoinGroup() {
     var username = document.getElementById('joinUsername').value.trim();
     var email = document.getElementById('joinEmail').value.trim();
     var password = document.getElementById('joinPassword').value;
-    var slug = document.getElementById('joinSlug').value.trim().toLowerCase();
+    var slug = window.JOIN_SLUG;
     if (!username) { alert('Informe seu nome de usuario.'); return; }
     if (!email || !email.includes('@')) { alert('Informe um e-mail valido.'); return; }
     if (!password) { alert('Informe sua senha.'); return; }
-    if (!slug) { alert('Informe o codigo do grupo.'); return; }
+    if (!slug) { alert('Escolha um grupo na lista.'); return; }
     var formEl = document.getElementById('joinGroupForm');
     var loadingEl = document.getElementById('joinGroupLoading');
     var statusEl = document.getElementById('joinGroupStatus');

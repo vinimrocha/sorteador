@@ -1052,6 +1052,56 @@ flex: 1;
 }
 
 /* =========================
+   LISTA DE GRUPOS (pedir acesso)
+   ========================= */
+
+#joinGroupList {
+    display: flex;
+    flex-direction: column;
+    gap: 8px;
+    max-height: min(32dvh, 240px);
+    overflow-y: auto;
+    -webkit-overflow-scrolling: touch;
+}
+
+.group-option {
+    display: flex;
+    align-items: center;
+    gap: 12px;
+    padding: 10px 12px;
+    min-height: 60px;
+    border: 2px solid var(--border);
+    border-radius: 10px;
+    background: #fff;
+    cursor: pointer;
+}
+
+.group-option:active {
+    background: #fafafa;
+}
+
+.group-option img {
+    width: 40px;
+    height: 40px;
+    object-fit: contain;
+    border-radius: 8px;
+    flex-shrink: 0;
+}
+
+.group-option span {
+    font-size: 15px;
+    font-weight: 600;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+}
+
+.group-option.selected {
+    border-color: var(--primary);
+    background: rgba(245, 124, 0, 0.08);
+}
+
+/* =========================
    TELA AGUARDANDO APROVACAO
    ========================= */
 
