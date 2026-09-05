@@ -77,7 +77,7 @@ function onAuthStateChanged(user) {
 
 function carregarMeusGrupos() {
     if (!AUTH.user) return [];
-    supabaseClient.from('usuarios_grupo').select('grupo_id, grupo(nome, slug, logo_url), role').eq('user_id', AUTH.user.id).order('role', { ascending: false }).then(function(result) {
+    supabaseClient.from('usuarios_grupo').select('grupo_id, grupos(nome, slug, logo_url), role').eq('user_id', AUTH.user.id).order('role', { ascending: false }).then(function(result) {
         if (result.error) { console.error('Erro ao carregar grupos:', result.error); return; }
         var groups = result.data || [];
         renderGroupSelector(groups);
@@ -89,7 +89,7 @@ function renderGroupSelector(groups) {
     if (!container || groups.length <= 1) { if (container) container.innerHTML = ''; return; }
     container.innerHTML = '<select id="grupoSelect" onchange="mudarGrupo(this.value)">' +
         groups.map(function(g) {
-            return '<option value="' + g.grupo.slug + '">' + g.grupo.nome + '</option>';
+            return '<option value="' + g.grupos.slug + '">' + g.grupos.nome + '</option>';
         }).join('') + '</select>';
 }
 
