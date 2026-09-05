@@ -294,7 +294,8 @@ function loadApp() {
         hideWaitingScreen();
         renderGroupSelector(approved);
         carregarGrupo(approved[0].slug);
-        renderPendingPanel(approved.filter(function(g) { return g.role === 'owner'; }));
+        /* Owner e admin aprovam/recusam solicitacoes. */
+        renderPendingPanel(approved);
     });
 }
 
@@ -350,9 +351,10 @@ function showManageGroup() {
     window.LOGO_FILE = null;
     var ls = document.getElementById('loginSection');
     var logo = grupoAtual.logo_url || SYSTEM_LOGO;
-    ls.innerHTML = '<div class="login-page"><div class="login-card"><div class="login-header"><h2>Gerenciar Grupo</h2><p>Nome e logo do grupo</p></div><div class="login-body"><div id="manageGroupForm"><div style="text-align:center;margin-bottom:12px;"><img id="manageLogoPreview" src="' + escAttr(logo) + '" alt="Logo do grupo" style="max-width:120px;border-radius:12px;"></div><div class="form-group"><label for="manageGroupName">Nome do grupo</label><input type="text" id="manageGroupName" value="' + escAttr(grupoAtual.nome) + '"></div><div class="form-group"><label for="manageGroupLogo">Nova logo (URL ou arquivo)</label><input type="text" id="manageGroupLogo" value="" placeholder="Cole a URL ou escolha um arquivo"><input type="file" id="manageGroupLogoFile" accept="image/*" style="margin-top:8px;"></div><button class="btn-primary" onclick="doSaveGroup()">Salvar</button><p class="login-hint"><a href="#" onclick="onAuthStateChanged(AUTH.user); return false;">Voltar</a></p></div><div id="manageGroupLoading" style="display:none;"><p>Salvando...</p></div><div id="manageGroupStatus"></div><div class="pending-panel" style="margin-top:16px;"><h3>Solicitações pendentes</h3><div id="managePendingList"><p class="login-hint">Carregando...</p></div></div></div></div></div>';
+    ls.innerHTML = '<div class="login-page"><div class="login-card"><div class="login-header"><h2>Gerenciar Grupo</h2><p>Nome e logo do grupo</p></div><div class="login-body"><div id="manageGroupForm"><div style="text-align:center;margin-bottom:12px;"><img id="manageLogoPreview" src="' + escAttr(logo) + '" alt="Logo do grupo" style="max-width:120px;border-radius:12px;"></div><div class="form-group"><label for="manageGroupName">Nome do grupo</label><input type="text" id="manageGroupName" value="' + escAttr(grupoAtual.nome) + '"></div><div class="form-group"><label for="manageGroupLogo">Nova logo (URL ou arquivo)</label><input type="text" id="manageGroupLogo" value="" placeholder="Cole a URL ou escolha um arquivo"><input type="file" id="manageGroupLogoFile" accept="image/*" style="margin-top:8px;"></div><button class="btn-primary" onclick="doSaveGroup()">Salvar</button><p class="login-hint"><a href="#" onclick="onAuthStateChanged(AUTH.user); return false;">Voltar</a></p></div><div id="manageGroupLoading" style="display:none;"><p>Salvando...</p></div><div id="manageGroupStatus"></div><div class="pending-panel" style="margin-top:16px;"><h3>Solicitações pendentes</h3><div id="managePendingList"><p class="login-hint">Carregando...</p></div></div><div class="pending-panel" style="margin-top:16px;"><h3>Administradores</h3><div id="manageMembersList"><p class="login-hint">Carregando...</p></div></div><div class="danger-zone"><h3>Zona de perigo</h3><p class="login-hint">Exclui o grupo, os jogadores e os acessos. Não pode ser desfeita.</p><button class="btn-danger" onclick="doDeleteGroup()">Excluir grupo e jogadores</button></div></div></div></div>';
     ls.style.display = 'block';
     carregarPendentesManage();
+    carregarMembrosManage();
     var fileInput = document.getElementById('manageGroupLogoFile');
     if (fileInput) fileInput.addEventListener('change', function() {
         var f = fileInput.files && fileInput.files[0];
@@ -431,6 +433,47 @@ function doRejectManage(requestId) {
     rejectUser(requestId).then(function(r) {
         if (!r.success) { alert('Erro: ' + r.error); return; }
         carregarPendentesManage();
+    });
+}
+
+/* Membros do grupo (owner): lista admins e remove acesso. */
+function getGroupMembers(groupId) {
+    return supabaseClient.from('usuarios_grupo').select('id, email, role, status').eq('grupo_id', groupId).eq('status', 'approved').order('role').then(function(r) {
+        if (r.error) return [];
+        return r.data || [];
+    }).catch(function() { return []; });
+}
+
+function carregarMembrosManage() {
+    var box = document.getElementById('manageMembersList');
+    if (!box || !grupoAtual) return;
+    box.innerHTML = '<p class="login-hint">Carregando...</p>';
+    getGroupMembers(grupoAtual.id).then(function(members) {
+        if (!members.length) { box.innerHTML = '<p class="login-hint">Nenhum membro.</p>'; return; }
+        box.innerHTML = members.map(function(m) {
+            var tag = m.role === 'owner' ? '<span class="admin-badge">owner</span>' : '<span class="admin-badge">admin</span>';
+            var btn = m.role === 'owner' ? '' : ' <button class="btn-secondary btn-compact" onclick="doRemoveAdmin(\'' + m.id + '\', \'' + escAttr(m.email) + '\')">Remover</button>';
+            return '<div class="pending-item"><span class="pending-email">' + escAttr(m.email) + ' ' + tag + '</span><span class="pending-actions">' + btn + '</span></div>';
+        }).join('');
+    });
+}
+
+function doRemoveAdmin(membershipId, email) {
+    if (!confirm('Remover "' + email + '" do grupo?')) return;
+    supabaseClient.from('usuarios_grupo').delete().eq('id', membershipId).then(function(r) {
+        if (r.error) { alert('Erro: ' + r.error.message); return; }
+        carregarMembrosManage();
+    });
+}
+
+/* Owner: exclui grupo + jogadores + acessos (cascade) e recarrega. */
+function doDeleteGroup() {
+    if (!AUTH.user || !grupoAtual || !isOwnerOf(grupoAtual.id)) { alert('Apenas o owner pode excluir o grupo.'); return; }
+    if (!confirm('Excluir o grupo "' + grupoAtual.nome + '" e TODOS os jogadores?')) return;
+    if (!confirm('Confirme novamente: exclusão definitiva.')) return;
+    supabaseClient.from('grupos').delete().eq('id', grupoAtual.id).then(function(r) {
+        if (r.error) { alert('Erro: ' + r.error.message); return; }
+        location.reload();
     });
 }
 
@@ -782,6 +825,7 @@ function loginWithEmail(email, password) {
 function logout() {
     PENDING_SIGNUP = null;
     window.LOGO_FILE = null;
+    window.JOIN_SLUG = null;
     supabaseClient.auth.signOut().then(function() { AUTH.user = null; AUTH.session = null; onAuthStateChanged(null); }).catch(function(err) { console.error('Erro ao logout:', err); });
 }
 
@@ -793,7 +837,7 @@ function renderLoginScreen() {
     if (mainEl) mainEl.style.display = 'none';
     if (adminSection) adminSection.style.display = 'none';
     resetHeaderGenerico();
-    ls.innerHTML = '<div class="login-page"><div class="login-card"><img src="sorteador-logo.png" alt="Sorteador de Times" class="login-logo"><div class="login-header"><h2>Sorteador de Times</h2><p>Area do organizador</p></div><div class="login-body"><div id="loginForm"><div class="form-group"><label for="loginEmail">Seu e-mail</label><input type="email" id="loginEmail" placeholder="seu@email.com" autocomplete="email"></div><div class="form-group"><label for="loginPassword">Sua senha</label><input type="password" id="loginPassword" placeholder="Sua senha" autocomplete="current-password"></div><button id="btnLogin" class="btn-primary" onclick="doLogin()">Entrar</button><p id="loginSwitchText" class="login-hint"><a href="#" onclick="showSignupForm(); return false;">Nao tem conta? Cadastre-se</a></p></div><div id="loginLoading" style="display:none;"><p>Entrando...</p></div><div id="loginStatus"></div></div></div></div>';
+    ls.innerHTML = '<div class="login-page"><div class="login-card"><img src="sorteador-logo.png" alt="Sorteador de Times" class="login-logo"><div class="login-header"><h2>Sorteador de Times</h2><p>Area do organizador</p></div><div class="login-body"><form id="loginForm" onsubmit="doLogin(); return false;"><div class="form-group"><label for="loginEmail">Seu e-mail</label><input type="email" id="loginEmail" placeholder="seu@email.com" autocomplete="email"></div><div class="form-group"><label for="loginPassword">Sua senha</label><input type="password" id="loginPassword" placeholder="Sua senha" autocomplete="current-password"></div><button id="btnLogin" class="btn-primary" type="submit">Entrar</button><p id="loginSwitchText" class="login-hint"><a href="#" onclick="showSignupForm(); return false;">Nao tem conta? Cadastre-se</a></p></form><div id="loginLoading" style="display:none;"><p>Entrando...</p></div><div id="loginStatus"></div></div></div></div>';
     ls.style.display = 'block';
 }
 
@@ -836,7 +880,30 @@ function showJoinGroup() {
     if (!ls) return;
     var email = PENDING_SIGNUP ? PENDING_SIGNUP.email : (AUTH.user ? AUTH.user.email : '');
     var username = PENDING_SIGNUP ? PENDING_SIGNUP.username : (displayName() || '');
-    ls.innerHTML = '<div class="login-page"><div class="login-card"><img src="sorteador-logo.png" alt="Sorteador de Times" class="login-logo"><div class="login-header"><h2>Entrar em Grupo</h2><p>O owner precisa aprovar seu pedido</p></div><div class="login-body"><div id="joinGroupForm"><div class="form-group"><label for="joinUsername">Seu nome de usuario</label><input type="text" id="joinUsername" placeholder="Seu nome" value="' + username + '"></div><div class="form-group"><label for="joinEmail">Seu e-mail</label><input type="email" id="joinEmail" placeholder="seu@email.com" value="' + email + '"></div><div class="form-group"><label for="joinPassword">Sua senha</label><input type="password" id="joinPassword" placeholder="Sua senha"></div><div class="form-group"><label for="joinSlug">Codigo do grupo</label><input type="text" id="joinSlug" placeholder="ex: boleiros-de-cristo" autocomplete="off"></div><button class="btn-primary" onclick="doJoinGroup()">Pedir acesso</button><p class="login-hint"><a href="#" onclick="showGroupChoice(); return false;">Voltar</a></p></div><div id="joinGroupLoading" style="display:none;"><p>Solicitando...</p></div><div id="joinGroupStatus"></div></div></div></div>';
+    ls.innerHTML = '<div class="login-page"><div class="login-card"><img src="sorteador-logo.png" alt="Sorteador de Times" class="login-logo"><div class="login-header"><h2>Entrar em Grupo</h2><p>O owner precisa aprovar seu pedido</p></div><div class="login-body"><div id="joinGroupForm"><div class="form-group"><label for="joinUsername">Seu nome de usuario</label><input type="text" id="joinUsername" placeholder="Seu nome" value="' + username + '"></div><div class="form-group"><label for="joinEmail">Seu e-mail</label><input type="email" id="joinEmail" placeholder="seu@email.com" value="' + email + '"></div><div class="form-group"><label for="joinPassword">Sua senha</label><input type="password" id="joinPassword" placeholder="Sua senha"></div><div class="form-group"><label>Escolha o grupo</label><div id="joinGroupList"><p class="login-hint">Carregando grupos...</p></div></div><button class="btn-primary" onclick="doJoinGroup()">Pedir acesso</button><p class="login-hint"><a href="#" onclick="showGroupChoice(); return false;">Voltar</a></p></div><div id="joinGroupLoading" style="display:none;"><p>Solicitando...</p></div><div id="joinGroupStatus"></div></div></div></div>';
+    window.JOIN_SLUG = null;
+    loadJoinGroups();
+}
+
+/* Lista de grupos para o novo usuario escolher onde pedir acesso. */
+function loadJoinGroups() {
+    var box = document.getElementById('joinGroupList');
+    if (!box) return;
+    supabaseClient.from('grupos').select('id, nome, slug, logo_url').order('nome').then(function(r) {
+        if (r.error) { box.innerHTML = '<p class="login-error">Erro ao carregar grupos: ' + r.error.message + '</p>'; return; }
+        if (!r.data || !r.data.length) { box.innerHTML = '<p class="login-hint">Nenhum grupo disponivel.</p>'; return; }
+        box.innerHTML = r.data.map(function(g) {
+            var logo = g.logo_url || SYSTEM_LOGO;
+            return '<div class="group-option" data-slug="' + g.slug + '" onclick="selectJoinGroup(\'' + g.slug + '\', this)"><img src="' + escAttr(logo) + '" alt="" width="40" height="40"><span>' + escAttr(g.nome) + '</span></div>';
+        }).join('');
+    }).catch(function() { box.innerHTML = '<p class="login-error">Erro ao carregar grupos.</p>'; });
+}
+
+function selectJoinGroup(slug, el) {
+    window.JOIN_SLUG = slug;
+    var items = document.querySelectorAll('#joinGroupList .group-option');
+    items.forEach(function(i) { i.classList.remove('selected'); });
+    if (el) el.classList.add('selected');
 }
 
 function doLogin() {
@@ -936,11 +1003,11 @@ function doJoinGroup() {
     var username = document.getElementById('joinUsername').value.trim();
     var email = document.getElementById('joinEmail').value.trim();
     var password = document.getElementById('joinPassword').value;
-    var slug = document.getElementById('joinSlug').value.trim().toLowerCase();
+    var slug = window.JOIN_SLUG;
     if (!username) { alert('Informe seu nome de usuario.'); return; }
     if (!email || !email.includes('@')) { alert('Informe um e-mail valido.'); return; }
     if (!password) { alert('Informe sua senha.'); return; }
-    if (!slug) { alert('Informe o codigo do grupo.'); return; }
+    if (!slug) { alert('Escolha um grupo na lista.'); return; }
     var formEl = document.getElementById('joinGroupForm');
     var loadingEl = document.getElementById('joinGroupLoading');
     var statusEl = document.getElementById('joinGroupStatus');
