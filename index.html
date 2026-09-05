@@ -4,6 +4,13 @@
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover">
     <meta name="theme-color" content="#1C1C1C">
+    <meta name="mobile-web-app-capable" content="yes">
+    <meta name="apple-mobile-web-app-capable" content="yes">
+    <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+    <meta name="apple-mobile-web-app-title" content="Sorteador">
+    <link rel="manifest" href="manifest.json">
+    <link rel="apple-touch-icon" href="icons/apple-touch-icon.png">
+    <link rel="icon" type="image/png" sizes="192x192" href="icons/icon-192.png">
     <meta property="og:title" content="Sorteador de Times" />
     <meta property="og:description" content="Sorteador de times para a sua pelada ⚽" />
     <meta property="og:type" content="website" />
@@ -98,6 +105,12 @@
     </section>
 </main>
 <div id="playerModal"></div>
+<div id="installBanner" style="display:none;">
+    <img src="icons/icon-192.png" alt="" width="40" height="40">
+    <div class="install-text"><strong>Sorteador de Times</strong><span id="installHint">Instale o aplicativo</span></div>
+    <button id="btnInstall" class="btn-primary btn-compact" onclick="doInstall()">Instalar</button>
+    <button class="install-close" onclick="dismissInstall()" aria-label="Fechar">X</button>
+</div>
 <footer class="site-footer">
     <p>Desenvolvido por <a href="https://www.linkedin.com/in/vinimartins/" target="_blank" rel="noopener noreferrer">Vinicios Martins</a></p>
 </footer>

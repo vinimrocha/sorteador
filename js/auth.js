@@ -1022,4 +1022,70 @@ function doJoinGroup() {
     });
 }
 
-document.addEventListener('DOMContentLoaded', function() { renderLoginScreen(); initAuth(); });
+document.addEventListener('DOMContentLoaded', function() { renderLoginScreen(); initAuth(); registerServiceWorker(); initInstallPrompt(); });
+
+/* PWA: registra o service worker e gerencia o banner "Instalar aplicativo". */
+function registerServiceWorker() {
+    if (!('serviceWorker' in navigator)) return;
+    window.addEventListener('load', function() {
+        navigator.serviceWorker.register('sw.js').catch(function(err) { console.warn('SW nao registrado:', err); });
+    });
+}
+
+var deferredInstallPrompt = null;
+
+function isIosDevice() { return /iphone|ipad|ipod/i.test(navigator.userAgent); }
+function isStandalone() { return window.matchMedia('(display-mode: standalone)').matches || window.navigator.standalone === true; }
+
+function initInstallPrompt() {
+    if (isStandalone()) return;
+    try { if (localStorage.getItem('installDismissed') === '1') return; } catch (e) {}
+    window.addEventListener('beforeinstallprompt', function(e) {
+        e.preventDefault();
+        deferredInstallPrompt = e;
+        showInstallBanner('Instale o aplicativo', 'Instalar');
+    });
+    window.addEventListener('appinstalled', function() {
+        deferredInstallPrompt = null;
+        hideInstallBanner();
+    });
+    /* iOS nao tem prompt automatico: mostra instrucao manual apos 2s. */
+    if (isIosDevice()) {
+        setTimeout(function() {
+            if (isStandalone() || deferredInstallPrompt) return;
+            showInstallBanner('Toque em Compartilhar e "Adicionar a Tela de Inicio"', 'OK');
+        }, 2000);
+    }
+}
+
+function showInstallBanner(hint, btnLabel) {
+    var banner = document.getElementById('installBanner');
+    var hintEl = document.getElementById('installHint');
+    var btn = document.getElementById('btnInstall');
+    if (!banner) return;
+    if (hintEl) hintEl.textContent = hint;
+    if (btn) btn.textContent = btnLabel;
+    banner.style.display = 'flex';
+}
+
+function hideInstallBanner() {
+    var banner = document.getElementById('installBanner');
+    if (banner) banner.style.display = 'none';
+}
+
+function doInstall() {
+    if (deferredInstallPrompt) {
+        deferredInstallPrompt.prompt();
+        deferredInstallPrompt.userChoice.then(function() {
+            deferredInstallPrompt = null;
+            hideInstallBanner();
+        }).catch(function() { hideInstallBanner(); });
+        return;
+    }
+    dismissInstall();
+}
+
+function dismissInstall() {
+    try { localStorage.setItem('installDismissed', '1'); } catch (e) {}
+    hideInstallBanner();
+}
