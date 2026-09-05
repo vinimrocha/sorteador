@@ -222,21 +222,58 @@ function rejectUser(requestId) {
 }
 
 function onAuthStateChanged(user) {
-    var loginSection = document.getElementById('loginSection');
     var adminSection = document.getElementById('adminSection');
-    var mainEl = document.getElementById('mainApp');
+    var btnLogin = document.getElementById('btnHeaderLogin');
     if (user) {
-        if (loginSection) { loginSection.innerHTML = ''; loginSection.style.display = 'none'; }
+        hideWaitingScreen();
+        if (btnLogin) btnLogin.style.display = 'none';
         if (adminSection) adminSection.style.display = 'block';
         loadApp();
     } else {
-        if (loginSection) loginSection.style.display = 'flex';
         if (adminSection) adminSection.style.display = 'none';
-        if (mainEl) mainEl.style.display = 'none';
         var panel = document.getElementById('pendingPanel');
         if (panel) panel.innerHTML = '';
-        renderLoginScreen();
+        renderPublicHome();
     }
+}
+
+/* Tela inicial generica: SORTEADOR DE TIMES, sem identidade de grupo e sem login obrigatorio. */
+var PUBLIC_SLUG = 'boleiros-de-cristo';
+
+function resetHeaderGenerico() {
+    var nomeEl = document.getElementById('nomeGrupo');
+    var subEl = document.getElementById('subGrupo');
+    var logoEl = document.getElementById('logoGrupo');
+    if (nomeEl) nomeEl.textContent = 'Sorteador de Times';
+    if (subEl) subEl.textContent = 'Sorteie os times da sua pelada';
+    if (logoEl) logoEl.src = 'logo-boleiros.png';
+    document.title = 'Sorteador de Times';
+}
+
+function personalizarHeader(grupo) {
+    var nomeEl = document.getElementById('nomeGrupo');
+    var subEl = document.getElementById('subGrupo');
+    var logoEl = document.getElementById('logoGrupo');
+    if (nomeEl) nomeEl.textContent = grupo.nome;
+    if (subEl) subEl.textContent = 'Sorteador Oficial de Times';
+    if (logoEl && grupo.logo_url) logoEl.src = grupo.logo_url;
+    document.title = grupo.nome + ' - Sorteador de Times';
+}
+
+function renderPublicHome() {
+    hideWaitingScreen();
+    var mainEl = document.getElementById('mainApp');
+    var btnLogin = document.getElementById('btnHeaderLogin');
+    if (mainEl) mainEl.style.display = 'block';
+    if (btnLogin) btnLogin.style.display = 'block';
+    resetHeaderGenerico();
+    var container = document.getElementById('groupSelector');
+    if (container) container.innerHTML = '';
+    carregarGrupo(PUBLIC_SLUG, false);
+}
+
+function openLogin() {
+    renderLoginScreen();
 }
 
 function displayName() {
@@ -330,17 +367,19 @@ function renderGroupSelector(groups) {
         groups.map(function(g) { return '<option value="' + g.slug + '">' + g.nome + '</option>'; }).join('') + '</select>';
 }
 
-function mudarGrupo(slug) { carregarGrupo(slug); }
+function mudarGrupo(slug) { carregarGrupo(slug, true); }
 
-function carregarGrupo(slug) {
+function carregarGrupo(slug, personalizar) {
     supabaseClient.from('grupos').select('id, nome, slug, logo_url').eq('slug', slug).single().then(function(result) {
-        if (result.error || !result.data) { alert('Grupo nao encontrado'); return; }
+        if (result.error || !result.data) {
+            if (personalizar !== false) alert('Grupo nao encontrado');
+            else console.warn('Grupo publico nao encontrado:', slug);
+            return;
+        }
         grupoAtual = result.data;
-        var nomeEl = document.getElementById('nomeGrupo');
-        var logoEl = document.getElementById('logoGrupo');
-        if (nomeEl) nomeEl.textContent = grupoAtual.nome;
-        if (logoEl && grupoAtual.logo_url) logoEl.src = grupoAtual.logo_url;
-        document.title = grupoAtual.nome + ' - Sorteador de Times';
+        /* Personaliza header só para admin/owner logado; visitante vê o generico. */
+        if (personalizar !== false && AUTH.user) personalizarHeader(grupoAtual);
+        else { grupoAtual.nome = 'Sorteador de Times'; grupoAtual.logo_url = grupoAtual.logo_url || 'logo-boleiros.png'; }
         carregarJogadores(grupoAtual.id);
     }).catch(function(err) { console.error('Erro ao carregar grupo:', err); });
 }
@@ -466,13 +505,22 @@ function realizarSorteio() {
 }
 
 function adicionarConvidado() {
-    if (!AUTH.user) { alert('Voce precisa estar logado.'); return; }
+    if (!grupoAtual) { alert('Aguarde carregar os jogadores.'); return; }
     var nome = document.getElementById('convidadoNome').value.trim();
     var tipo = document.getElementById('convidadoTipo').value;
     var categoria = parseFloat(document.getElementById('convidadoCategoria').value);
     if (!nome) { alert('Informe o nome do convidado.'); return; }
     var menina = document.getElementById('convidadoMenina').checked;
-    salvarJogadorNoSupabase({ nome: nome, categoria: categoria, goleiro: tipo === 'goleiro', presente: true, convidado: true, menina: menina, grupo_id: grupoAtual.id });
+    var convidado = { nome: nome, categoria: categoria, goleiro: tipo === 'goleiro', presente: true, convidado: true, menina: menina, grupo_id: grupoAtual.id };
+    /* Visitante sem login: convidado vale só nesta sessão (não persiste). */
+    if (!AUTH.user) {
+        jogadores.push(convidado);
+        renderLista();
+        document.getElementById('convidadoNome').value = '';
+        document.getElementById('convidadoMenina').checked = false;
+        return;
+    }
+    salvarJogadorNoSupabase(convidado);
 }
 
 function salvarJogadorNoSupabase(jogador) {
@@ -544,7 +592,7 @@ function renderLoginScreen() {
     if (!ls) return;
     var mainEl = document.getElementById('mainApp');
     if (mainEl && !AUTH.user) mainEl.style.display = 'none';
-    ls.innerHTML = '<div class="login-overlay"><div class="login-card"><div class="login-header"><h2>Boleiros de Cristo</h2><p>Area do organizador</p></div><div class="login-body"><div id="loginForm"><div class="form-group"><label for="loginEmail">Seu e-mail</label><input type="email" id="loginEmail" placeholder="seu@email.com" autocomplete="email"></div><div class="form-group"><label for="loginPassword">Sua senha</label><input type="password" id="loginPassword" placeholder="Sua senha" autocomplete="current-password"></div><button id="btnLogin" class="btn-primary" onclick="doLogin()">Entrar</button><p id="loginSwitchText" class="login-hint"><a href="#" onclick="showSignupForm(); return false;">Nao tem conta? Cadastre-se</a></p></div><div id="loginLoading" style="display:none;"><p>Entrando...</p></div><div id="loginStatus"></div></div></div></div>';
+    ls.innerHTML = '<div class="login-overlay"><div class="login-card"><div class="login-header"><h2>Sorteador de Times</h2><p>Area do organizador</p></div><div class="login-body"><div id="loginForm"><div class="form-group"><label for="loginEmail">Seu e-mail</label><input type="email" id="loginEmail" placeholder="seu@email.com" autocomplete="email"></div><div class="form-group"><label for="loginPassword">Sua senha</label><input type="password" id="loginPassword" placeholder="Sua senha" autocomplete="current-password"></div><button id="btnLogin" class="btn-primary" onclick="doLogin()">Entrar</button><p id="loginSwitchText" class="login-hint"><a href="#" onclick="showSignupForm(); return false;">Nao tem conta? Cadastre-se</a></p></div><div id="loginLoading" style="display:none;"><p>Entrando...</p></div><div id="loginStatus"></div></div></div></div>';
     ls.style.display = 'flex';
 }
 
@@ -706,4 +754,4 @@ function doJoinGroup() {
     });
 }
 
-document.addEventListener('DOMContentLoaded', function() { initAuth(); if (!AUTH.user) renderLoginScreen(); });
+document.addEventListener('DOMContentLoaded', function() { renderPublicHome(); initAuth(); });

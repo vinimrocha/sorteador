@@ -70,6 +70,16 @@ min-width: 0;
 text-align: left;
 }
 
+.header-actions {
+margin-left: auto;
+flex-shrink: 0;
+}
+
+.header-actions button {
+width: auto;
+margin-top: 0;
+}
+
 .header h1 {
 font-size: 17px;
 line-height: 1.2;
