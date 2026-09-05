@@ -1,4 +1,5 @@
 const AUTH = { loading: false, user: null, session: null };
+var grupoAtual = null;
 
 const SUPABASE_URL = 'https://maqdmlsouqmadoaayrcv.supabase.co';
 const SUPABASE_ANON_KEY = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6Im1hcWRtbHNvdXFtYWRvYWF5cmN2Iiwicm9sZSI6ImFub24iLCJpYXQiOjE3ODg1NjQ2ODMsImV4cCI6MjEwNDE0MDY4M30.QTLO0en8WYvsdPMdkKuNUefSk8N1w72-B89a-4beRFM';

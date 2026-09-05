@@ -7,14 +7,14 @@
     <meta property="og:title" content="Boleiros de Cristo - Sorteador de Times" />
     <meta property="og:description" content="Sorteador de times do grupo Boleiros de Cristo ⚽" />
     <meta property="og:type" content="website" />
-    <meta property="og:url" content="https://vinimrocha.github.io/boleirosdecristo/" />
-    <meta property="og:image" content="https://vinimrocha.github.io/boleirosdecristo/logo-boleiros.png" />
+    <meta property="og:url" content="https://vinimrocha.github.io/sorteador/" />
+    <meta property="og:image" content="https://vinimrocha.github.io/sorteador/logo-boleiros.png" />
     <meta property="og:image:width" content="1200" />
     <meta property="og:image:height" content="630" />
     <meta name="twitter:card" content="summary_large_image" />
     <meta name="twitter:title" content="Boleiros de Cristo - Sorteador de Times" />
     <meta name="twitter:description" content="Sorteador de times do grupo Boleiros de Cristo ⚽" />
-    <meta name="twitter:image" content="https://vinimrocha.github.io/boleirosdecristo/logo-boleiros.png" />
+    <meta name="twitter:image" content="https://vinimrocha.github.io/sorteador/logo-boleiros.png" />
     <meta name="description" content="Sorteador de times para suas peladas" />
     <title>Boleiros de Cristo - Sorteador de Times</title>
     <link rel="stylesheet" href="css/style.css">
@@ -47,7 +47,7 @@
         <div id="listaJogadores" class="lista-jogadores"></div>
     </section>
     <section class="card card-config">
-        <h2>Configuração</h2>
+        <h2>Configurao</h2>
         <p class="config-label">Jogadores por time</p>
         <div class="radio-group">
             <label class="radio-option"><input type="radio" name="jogadoresPorTime" value="4"><span class="radio-value">4</span><span class="radio-hint">por time</span></label>
@@ -55,8 +55,8 @@
             <label class="radio-option"><input type="radio" name="jogadoresPorTime" value="6" checked><span class="radio-value">6</span><span class="radio-hint">por time</span></label>
         </div>
         <div class="sort-actions">
-            <button id="btnSortear" class="btn-primary">Sortear Times</button>
-            <button id="btnDesmarcar" class="btn-secondary btn-compact">Desmarcar Todos</button>
+            <button id="btnSortear" class="btn-primary" onclick="realizarSorteio()">Sortear Times</button>
+            <button id="btnDesmarcar" class="btn-secondary btn-compact" onclick="desmarcarTodos()">Desmarcar Todos</button>
         </div>
     </section>
     <details class="card card-collapsible">
@@ -68,13 +68,13 @@
                 <div class="form-group" id="categoriaContainer"><label for="convidadoCategoria">Categoria</label><select id="convidadoCategoria"><option value="0">0</option><option value="0.5">0.5</option><option value="1">1</option><option value="1.5">1.5</option><option value="2">2</option><option value="2.5">2.5</option><option value="3">3</option><option value="3.5">3.5</option><option value="4">4</option><option value="4.5">4.5</option><option value="5">5</option></select></div>
             </div>
             <div class="form-group form-check"><label><input type="checkbox" id="convidadoMenina"> Menina (times separados)</label></div>
-            <button id="btnAdicionar" type="button">Adicionar Convidado</button>
+            <button id="btnAdicionar" type="button" onclick="adicionarConvidado()">Adicionar Convidado</button>
         </div>
     </details>
     <section id="resultadoContainer" class="resultado-container">
         <div class="acoes-resultado">
-            <button id="btnResortear" class="btn-secondary" style="display:none;">Sortear Novamente</button>
-            <button id="btnCompartilhar" class="btn-success" style="display:none;">Compartilhar Imagem</button>
+            <button id="btnResortear" class="btn-secondary" onclick="realizarSorteio()" style="display:none;">Sortear Novamente</button>
+            <button id="btnCompartilhar" class="btn-success" onclick="compartilharImagem()" style="display:none;">Compartilhar Imagem</button>
         </div>
         <div id="resultado"></div>
     </section>
@@ -83,6 +83,5 @@
     <p>Desenvolvido por <a href="https://www.linkedin.com/in/vinimartins/" target="_blank" rel="noopener noreferrer">Vinicios Martins</a></p>
 </footer>
 <script src="js/auth.js"></script>
-<script src="js/app.js"></script>
 </body>
 </html>
