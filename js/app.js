@@ -5,7 +5,8 @@
  * CONFIGURACAO: Preencha as constantes abaixo com seus dados do Supabase
  */
 
-window.supabaseClient = window.supabase.createClient(SUPABASE_URL, SUPABASE_ANON_KEY);
+// supabaseClient ja esta disponivel via auth.js
+const supabaseClient = window.supabaseClient;
 
 // =========================
 // ESTADO GLOBAL
