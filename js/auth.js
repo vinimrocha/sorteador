@@ -642,7 +642,7 @@ function renderResultado(times) {
         var html = '<h3>' + t.nome + '</h3>';
         t.jogadores.forEach(function(j) {
             if (j.goleiro) html += '<div class="goleiro">🧤 <strong><em>' + j.nome + '</em></strong></div>';
-            else if (j.menina) html += '<div class="menina">👧 <strong><em>' + j.nome + '</em></strong></div>';
+            else if (j.menina) html += '<div class="menina">🌸 <strong><em>' + j.nome + '</em></strong></div>';
             else html += '<div>' + j.nome + '</div>';
         });
         div.innerHTML = html;
