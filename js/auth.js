@@ -477,13 +477,119 @@ function renderLista() {
         if (j.convidado) { var cs = document.createElement('em'); cs.className = 'tag-convidado'; cs.textContent = ' convidado'; metaDiv.appendChild(cs); }
         infoDiv.appendChild(strong); infoDiv.appendChild(metaDiv);
         label.appendChild(checkbox); label.appendChild(infoDiv);
-        div.appendChild(label); listaEl.appendChild(div);
+        div.appendChild(label);
+        var actions = document.createElement('div');
+        actions.className = 'jogador-actions';
+        var btnEdit = document.createElement('button');
+        btnEdit.type = 'button';
+        btnEdit.className = 'btn-mini';
+        btnEdit.textContent = 'Editar';
+        btnEdit.dataset.index = index;
+        var btnDel = document.createElement('button');
+        btnDel.type = 'button';
+        btnDel.className = 'btn-mini btn-mini-danger';
+        btnDel.textContent = 'Excluir';
+        btnDel.dataset.index = index;
+        actions.appendChild(btnEdit); actions.appendChild(btnDel);
+        div.appendChild(actions); listaEl.appendChild(div);
         checkbox.addEventListener('change', function() {
             jogadores[parseInt(this.dataset.index)].presente = this.checked;
             atualizarContador();
         });
+        btnEdit.addEventListener('click', function() { editarJogador(parseInt(this.dataset.index)); });
+        btnDel.addEventListener('click', function() { removerJogador(parseInt(this.dataset.index)); });
     });
+    var limEl = document.getElementById('limiteJogadores');
+    if (limEl) limEl.textContent = jogadores.length + ' de 150 jogadores';
     atualizarContador();
+}
+
+var LIMITE_JOGADORES = 150;
+
+function atingiuLimite() {
+    if (jogadores.length >= LIMITE_JOGADORES) { alert('Limite de 150 jogadores atingido.'); return true; }
+    return false;
+}
+
+/* Payload só com colunas da tabela (sem flags locais como presente). */
+function payloadJogador(j) {
+    return { grupo_id: j.grupo_id, nome: j.nome, categoria: j.categoria, goleiro: !!j.goleiro, menina: !!j.menina, convidado: !!j.convidado };
+}
+
+function limparFormFixo() {
+    document.getElementById('fixoNome').value = '';
+    document.getElementById('fixoTipo').value = 'linha';
+    document.getElementById('fixoCategoria').value = '3';
+    document.getElementById('fixoMenina').checked = false;
+}
+
+function adicionarJogadorFixo() {
+    if (!AUTH.user) { alert('Entre com sua conta para incluir jogadores.'); return; }
+    if (!grupoAtual) { alert('Aguarde carregar os jogadores.'); return; }
+    if (atingiuLimite()) return;
+    var nome = document.getElementById('fixoNome').value.trim();
+    var tipo = document.getElementById('fixoTipo').value;
+    var categoria = parseFloat(document.getElementById('fixoCategoria').value);
+    var menina = document.getElementById('fixoMenina').checked;
+    if (!nome) { alert('Informe o nome do jogador.'); return; }
+    var jogador = { nome: nome, categoria: categoria, goleiro: tipo === 'goleiro', presente: false, convidado: false, menina: menina, grupo_id: grupoAtual.id };
+    supabaseClient.from('jogadores').insert(payloadJogador(jogador)).select().then(function(result) {
+        if (result.error) throw result.error;
+        jogador.id = result.data[0].id;
+        jogadores.push(jogador);
+        jogadores.sort(function(a, b) { return a.nome.localeCompare(b.nome); });
+        renderLista();
+        limparFormFixo();
+    }).catch(function(err) { alert('Erro ao incluir: ' + err.message); });
+}
+
+function editarJogador(index) {
+    var j = jogadores[index];
+    if (!j) return;
+    if (!AUTH.user) { alert('Entre com sua conta para editar jogadores.'); return; }
+    window.EDIT_INDEX = index;
+    var modal = document.getElementById('playerModal');
+    var cats = ['0', '0.5', '1', '1.5', '2', '2.5', '3', '3.5', '4', '4.5', '5'].map(function(c) {
+        return '<option value="' + c + '"' + (parseFloat(c) === parseFloat(j.categoria) ? ' selected' : '') + '>' + c + '</option>';
+    }).join('');
+    modal.innerHTML = '<div class="player-modal-overlay" onclick="if(event.target===this)fecharModalJogador()"><div class="player-modal"><h3>Editar jogador</h3><div class="form-group"><label for="editNome">Nome</label><input type="text" id="editNome" value="' + escAttr(j.nome) + '" autocomplete="off"></div><div class="form-row"><div class="form-group"><label for="editTipo">Tipo</label><select id="editTipo"><option value="linha"' + (j.goleiro ? '' : ' selected') + '>Linha</option><option value="goleiro"' + (j.goleiro ? ' selected' : '') + '>Goleiro</option></select></div><div class="form-group"><label for="editCategoria">Categoria</label><select id="editCategoria">' + cats + '</select></div></div><div class="form-group form-check"><label><input type="checkbox" id="editMenina"' + (j.menina ? ' checked' : '') + '> Menina (times separados)</label></div><div class="player-modal-row"><button class="btn-secondary" onclick="fecharModalJogador()">Cancelar</button><button class="btn-primary" onclick="salvarEdicaoJogador()">Salvar</button></div></div></div>';
+}
+
+function fecharModalJogador() {
+    var modal = document.getElementById('playerModal');
+    if (modal) modal.innerHTML = '';
+    window.EDIT_INDEX = null;
+}
+
+function salvarEdicaoJogador() {
+    var index = window.EDIT_INDEX;
+    var j = jogadores[index];
+    if (j == null || !j) { fecharModalJogador(); return; }
+    var nome = document.getElementById('editNome').value.trim();
+    var tipo = document.getElementById('editTipo').value;
+    var categoria = parseFloat(document.getElementById('editCategoria').value);
+    var menina = document.getElementById('editMenina').checked;
+    if (!nome) { alert('Informe o nome do jogador.'); return; }
+    var patch = { nome: nome, categoria: categoria, goleiro: tipo === 'goleiro', menina: menina };
+    supabaseClient.from('jogadores').update(patch).eq('id', j.id).select().then(function(result) {
+        if (result.error) throw result.error;
+        jogadores[index] = Object.assign({}, j, patch);
+        jogadores.sort(function(a, b) { return a.nome.localeCompare(b.nome); });
+        renderLista();
+        fecharModalJogador();
+    }).catch(function(err) { alert('Erro ao salvar: ' + err.message); });
+}
+
+function removerJogador(index) {
+    var j = jogadores[index];
+    if (!j) return;
+    if (!AUTH.user) { alert('Entre com sua conta para remover jogadores.'); return; }
+    if (!confirm('Remover "' + j.nome + '" da lista?')) return;
+    supabaseClient.from('jogadores').delete().eq('id', j.id).then(function(result) {
+        if (result.error) { alert('Erro ao remover: ' + result.error.message); return; }
+        jogadores.splice(index, 1);
+        renderLista();
+    });
 }
 
 function getPresentes() {
@@ -567,6 +673,7 @@ function realizarSorteio() {
 function adicionarConvidado() {
     if (!AUTH.user) { alert('Entre com sua conta para adicionar convidados.'); return; }
     if (!grupoAtual) { alert('Aguarde carregar os jogadores.'); return; }
+    if (atingiuLimite()) return;
     var nome = document.getElementById('convidadoNome').value.trim();
     var tipo = document.getElementById('convidadoTipo').value;
     var categoria = parseFloat(document.getElementById('convidadoCategoria').value);
@@ -580,10 +687,11 @@ function salvarJogadorNoSupabase(jogador) {
     if (!AUTH.user) { alert('Acesso negado.'); return; }
     supabaseClient.from('usuarios_grupo').select('id').eq('grupo_id', jogador.grupo_id).eq('user_id', AUTH.user.id).single().then(function(r) {
         if (!r.data) { alert('Voce nao tem permissao para este grupo.'); return; }
-        supabaseClient.from('jogadores').insert(jogador).select().then(function(result) {
+        supabaseClient.from('jogadores').insert(payloadJogador(jogador)).select().then(function(result) {
             if (result.error) throw result.error;
-            jogador.id = result.data.id;
+            jogador.id = result.data[0].id;
             jogadores.push(jogador);
+            jogadores.sort(function(a, b) { return a.nome.localeCompare(b.nome); });
             renderLista();
             document.getElementById('convidadoNome').value = '';
             document.getElementById('convidadoMenina').checked = false;

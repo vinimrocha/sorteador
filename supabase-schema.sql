@@ -32,6 +32,7 @@ create table if not exists public.jogadores (
 );
 
 alter table if exists public.usuarios_grupo add column if not exists status text default 'approved';
+alter table if exists public.jogadores add column if not exists convidado boolean default false;
 
 create index if not exists idx_jogadores_grupo on public.jogadores(grupo_id);
 create index if not exists idx_usuarios_grupo_email on public.usuarios_grupo(lower(email));

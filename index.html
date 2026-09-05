@@ -49,6 +49,7 @@
             <h2>Jogadores Presentes</h2>
             <div id="contadorSelecionados" class="contador">0 selecionados</div>
         </div>
+        <p class="limite-jogadores" id="limiteJogadores">0 de 150 jogadores</p>
         <div id="listaJogadores" class="lista-jogadores"></div>
     </section>
     <section class="card card-config">
@@ -64,6 +65,18 @@
             <button id="btnDesmarcar" class="btn-secondary btn-compact" onclick="desmarcarTodos()">Desmarcar Todos</button>
         </div>
     </section>
+    <details class="card card-collapsible">
+        <summary>Incluir Jogador Fixo</summary>
+        <div class="card-collapsible-body">
+            <div class="form-group"><label for="fixoNome">Nome</label><input type="text" id="fixoNome" placeholder="Nome do jogador" autocomplete="off"></div>
+            <div class="form-row">
+                <div class="form-group"><label for="fixoTipo">Tipo</label><select id="fixoTipo"><option value="linha">Linha</option><option value="goleiro">Goleiro</option></select></div>
+                <div class="form-group"><label for="fixoCategoria">Categoria</label><select id="fixoCategoria"><option value="0">0</option><option value="0.5">0.5</option><option value="1">1</option><option value="1.5">1.5</option><option value="2">2</option><option value="2.5">2.5</option><option value="3" selected>3</option><option value="3.5">3.5</option><option value="4">4</option><option value="4.5">4.5</option><option value="5">5</option></select></div>
+            </div>
+            <div class="form-group form-check"><label><input type="checkbox" id="fixoMenina"> Menina (times separados)</label></div>
+            <button id="btnIncluirFixo" type="button" onclick="adicionarJogadorFixo()">Incluir Jogador</button>
+        </div>
+    </details>
     <details class="card card-collapsible">
         <summary>Adicionar Convidado</summary>
         <div class="card-collapsible-body">
@@ -84,6 +97,7 @@
         <div id="resultado"></div>
     </section>
 </main>
+<div id="playerModal"></div>
 <footer class="site-footer">
     <p>Desenvolvido por <a href="https://www.linkedin.com/in/vinimartins/" target="_blank" rel="noopener noreferrer">Vinicios Martins</a></p>
 </footer>
