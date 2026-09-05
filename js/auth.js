@@ -640,14 +640,20 @@ function renderResultado(times) {
         var div = document.createElement('div');
         div.className = 'time';
         var html = '<h3>' + t.nome + '</h3>';
-        t.jogadores.forEach(function(j) { html += j.goleiro ? '<div class="goleiro">Goleiro ' + j.nome + '</div>' : '<div>' + j.nome + '</div>'; });
+        t.jogadores.forEach(function(j) {
+            if (j.goleiro) html += '<div class="goleiro">🧤 <strong><em>' + j.nome + '</em></strong></div>';
+            else if (j.menina) html += '<div class="menina">👧 <strong><em>' + j.nome + '</em></strong></div>';
+            else html += '<div>' + j.nome + '</div>';
+        });
         div.innerHTML = html;
         grid.appendChild(div);
     });
     imagemContainer.appendChild(grid);
     var footer = document.createElement('div');
     footer.className = 'resultado-footer';
-    footer.innerHTML = '<span>' + new Date().toLocaleDateString('pt-BR') + '</span>';
+    var agora = new Date();
+    var dataHora = agora.toLocaleDateString('pt-BR') + ' ' + agora.toLocaleTimeString('pt-BR', { hour: '2-digit', minute: '2-digit' });
+    footer.innerHTML = '<span>' + dataHora + '</span>';
     imagemContainer.appendChild(footer);
     resultadoEl.appendChild(imagemContainer);
 }
@@ -720,7 +726,10 @@ function compartilharImagem() {
         html2canvas(el, { scale: 2, useCORS: true, backgroundColor: '#f4f4f4' }).then(function(canvas) {
             el.style.fontFamily = originalFont;
             canvas.toBlob(function(blob) {
-                var file = new File([blob], 'times.png', { type: 'image/png' });
+                var agora = new Date();
+                var pad = function(n) { return (n < 10 ? '0' : '') + n; };
+                var stamp = agora.getFullYear() + pad(agora.getMonth() + 1) + pad(agora.getDate()) + '-' + pad(agora.getHours()) + pad(agora.getMinutes());
+                var file = new File([blob], 'times-' + stamp + '.png', { type: 'image/png' });
                 if (navigator.share) { navigator.share({ title: grupoAtual.nome, text: 'Times da pelada', files: [file] }); }
                 else { alert('Compartilhamento nao suportado.'); }
             });
