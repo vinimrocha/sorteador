@@ -48,6 +48,8 @@ begin
 end;
 $$ language plpgsql;
 
+drop trigger if exists trg_check_limite_usuarios_grupo on public.usuarios_grupo;
+
 create trigger trg_check_limite_usuarios_grupo
 before insert on public.usuarios_grupo
 for each row execute function public.check_limite_usuarios_grupo();
@@ -61,6 +63,8 @@ begin
   return NEW;
 end;
 $$ language plpgsql;
+
+drop trigger if exists trg_check_limite_jogadores on public.jogadores;
 
 create trigger trg_check_limite_jogadores
 before insert on public.jogadores
@@ -78,9 +82,13 @@ begin
 end;
 $$ language plpgsql security definer;
 
+drop trigger if exists trg_link_auth_user on auth.users;
+
 create trigger trg_link_auth_user
 after insert on auth.users
 for each row execute function public.link_user_to_group();
+
+drop trigger if exists trg_owner_auto_approved on public.usuarios_grupo;
 
 alter table public.grupos enable row level security;
 alter table public.usuarios_grupo enable row level security;
@@ -112,14 +120,26 @@ create trigger trg_owner_auto_approved
 before insert on public.usuarios_grupo
 for each row execute function public.set_owner_approved();
 
+drop policy if exists "Grupos visiveis publicamente" on public.grupos;
+drop policy if exists "Usuarios autenticados criam grupo" on public.grupos;
+drop policy if exists "Admins atualizam grupos" on public.grupos;
+drop policy if exists "Admins deletam grupos" on public.grupos;
 create policy "Grupos visiveis publicamente" on public.grupos for select using (true);
 create policy "Usuarios autenticados criam grupo" on public.grupos for insert to authenticated with check (true);
 create policy "Admins atualizam grupos" on public.grupos for update to authenticated using (public.is_admin_do_grupo(id));
 create policy "Admins deletam grupos" on public.grupos for delete to authenticated using (public.is_admin_do_grupo(id));
 
+drop policy if exists "Membros veem admins" on public.usuarios_grupo;
+drop policy if exists "Admins aprovam pending" on public.usuarios_grupo;
+drop policy if exists "Admins removem admins" on public.usuarios_grupo;
 create policy "Membros veem admins" on public.usuarios_grupo for select to authenticated using (public.is_admin_do_grupo(grupo_id));
 create policy "Admins aprovam pending" on public.usuarios_grupo for update to authenticated with check (public.is_admin_do_grupo(grupo_id));
 create policy "Admins removem admins" on public.usuarios_grupo for delete to authenticated using (public.is_admin_do_grupo(grupo_id));
+
+drop policy if exists "Jogadores visiveis publicamente" on public.jogadores;
+drop policy if exists "Admins inserem jogadores" on public.jogadores;
+drop policy if exists "Admins atualizam jogadores" on public.jogadores;
+drop policy if exists "Admins deletam jogadores" on public.jogadores;
 create policy "Jogadores visiveis publicamente" on public.jogadores for select using (ativo = true);
 create policy "Admins inserem jogadores" on public.jogadores for insert to authenticated with check (public.is_admin_do_grupo(grupo_id));
 create policy "Admins atualizam jogadores" on public.jogadores for update to authenticated using (public.is_admin_do_grupo(grupo_id));
