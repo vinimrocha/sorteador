@@ -781,3 +781,98 @@ flex: 1;
     padding: 6px 14px;
     font-size: 13px;
 }
+
+/* =========================
+   TELA DE LOGIN - NOVO USUARIO
+   ========================= */
+
+#newUserForm button, #createGroupForm button, #joinGroupForm button {
+    width: 100%;
+    margin-bottom: 8px;
+}
+
+#newUserForm .btn-secondary, #createGroupForm .btn-secondary, #joinGroupForm .btn-secondary {
+    background: #6c757d;
+    border-color: #6c757d;
+    color: #fff;
+}
+
+.login-hint a {
+    color: var(--primary);
+    text-decoration: underline;
+    cursor: pointer;
+}
+
+.login-hint a:hover {
+    color: var(--primary-dark);
+}
+
+.login-success {
+    color: #2e7d32;
+    text-align: center;
+    padding: 12px;
+    background: #e8f5e9;
+    border-radius: 8px;
+    margin-top: 16px;
+}
+
+.login-error {
+    color: #c62828;
+    text-align: center;
+    padding: 12px;
+    background: #ffebee;
+    border-radius: 8px;
+    margin-top: 16px;
+}
+
+/* =========================
+   TELA DE PEDIDOS PENDENTES
+   ========================= */
+
+.pending-panel {
+    background: var(--card);
+    border: 1px solid var(--border);
+    border-radius: 8px;
+    padding: 16px;
+    margin-bottom: 16px;
+}
+
+.pending-panel h3 {
+    margin-bottom: 12px;
+    color: var(--primary);
+}
+
+.pending-item {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    padding: 8px;
+    border-bottom: 1px solid var(--border);
+}
+
+.pending-item:last-child {
+    border-bottom: none;
+}
+
+.pending-email {
+    font-weight: 600;
+}
+
+.pending-actions button {
+    margin-left: 4px;
+}
+
+/* =========================
+   ADMIN PANEL
+   ========================= */
+
+.admin-badge {
+    background: var(--primary);
+    color: #fff;
+    padding: 4px 12px;
+    border-radius: 20px;
+    font-size: 12px;
+    font-weight: 600;
+    display: inline-block;
+    margin-bottom: 8px;
+}

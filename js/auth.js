@@ -10,11 +10,11 @@ window.supabaseClient = window.supabase.createClient(SUPABASE_URL, SUPABASE_ANON
 
 function initAuth() {
     try {
-        const hash = window.location.hash;
+        var hash = window.location.hash;
         if (hash && hash.includes('access_token')) {
-            const params = new URLSearchParams(hash.substring(1));
-            const accessToken = params.get('access_token');
-            const refreshToken = params.get('refresh_token');
+            var params = new URLSearchParams(hash.substring(1));
+            var accessToken = params.get('access_token');
+            var refreshToken = params.get('refresh_token');
             if (accessToken) {
                 supabaseClient.auth.setSession({ access_token: accessToken, refresh_token: refreshToken }).then(function(data) {
                     AUTH.session = data.session;
@@ -43,23 +43,87 @@ function initAuth() {
     }
 }
 
-function loginWithEmail(email, password) {
-    AUTH.loading = true;
-    return supabaseClient.auth.signInWithPassword({
-        email: email.trim(),
-        password: password
-    }).then(function(result) {
-        if (result.error) return { success: false, error: result.error.message };
-        return { success: true, message: 'Logado com sucesso!' };
-    }).finally(function() { AUTH.loading = false; });
+function checkEmailExists(email) {
+    return supabaseClient.auth.admin.listUsers().then(function(result) {
+        if (result.error) return { exists: false, error: result.error };
+        var users = result.data.users || [];
+        var found = users.find(function(u) { return u.email === email.trim().toLowerCase(); });
+        return { exists: !!found, user: found || null };
+    }).catch(function(err) { return { exists: false, error: err }; });
 }
 
-function logout() {
-    supabaseClient.auth.signOut().then(function() {
-        AUTH.user = null;
-        AUTH.session = null;
-        onAuthStateChanged(null);
-    }).catch(function(err) { console.error('Erro ao logout:', err); });
+function createUserAndGroup(email, password, username) {
+    return supabaseClient.auth.signUp({ email: email.trim(), password: password }).then(function(result) {
+        if (result.error) return { success: false, error: result.error.message };
+        return { success: true, user: result.data.user };
+    }).then(function(result) {
+        if (!result.success) return result;
+        var slug = username.toLowerCase().replace(/[^a-z0-9]/g, '-').substring(0, 30) + '-' + Date.now().toString(36);
+        return supabaseClient.from('grupos').insert({ nome: username, slug: slug, logo_url: 'logo-boleiros.png' }).select().then(function(r) {
+            if (r.error) return { success: false, error: r.error.message };
+            return { success: true, grupo: r.data[0] };
+        });
+    }).then(function(result) {
+        if (!result.success) return result;
+        return supabaseClient.from('usuarios_grupo').insert({
+            grupo_id: result.grupo.id,
+            email: email.trim(),
+            role: 'owner',
+            status: 'approved'
+        }).select().then(function(r) {
+            if (r.error) return { success: false, error: r.error.message };
+            return { success: true };
+        });
+    });
+}
+
+function joinGroup(email, password, groupSlug) {
+    return supabaseClient.auth.signUp({ email: email.trim(), password: password }).then(function(result) {
+        if (result.error) return { success: false, error: result.error.message };
+        return supabaseClient.from('grupos').select('id').eq('slug', groupSlug).single().then(function(r) {
+            if (r.error || !r.data) return { success: false, error: 'Grupo nao encontrado' };
+            return supabaseClient.from('usuarios_grupo').insert({
+                grupo_id: r.data.id,
+                email: email.trim(),
+                role: 'admin',
+                status: 'pending'
+            }).select().then(function(ir) {
+                if (ir.error) return { success: false, error: ir.error.message };
+                return { success: true };
+            });
+        });
+    });
+}
+
+function getMyGroups() {
+    if (!AUTH.user) return [];
+    return supabaseClient.from('usuarios_grupo').select('grupo_id, grupos(nome, slug, logo_url), role, status').eq('user_id', AUTH.user.id).then(function(result) {
+        if (result.error) return [];
+        return (result.data || []).map(function(g) {
+            return { id: g.grupo_id, nome: g.grupos.nome, slug: g.grupos.slug, logo_url: g.grupos.logo_url, role: g.role, status: g.status };
+        });
+    }).catch(function() { return []; });
+}
+
+function getPendingRequests(groupId) {
+    return supabaseClient.from('usuarios_grupo').select('id, email, role, created_at').eq('grupo_id', groupId).eq('status', 'pending').then(function(result) {
+        if (result.error) return [];
+        return result.data || [];
+    }).catch(function() { return []; });
+}
+
+function approveUser(requestId) {
+    return supabaseClient.from('usuarios_grupo').update({ status: 'approved' }).eq('id', requestId).select().then(function(result) {
+        if (result.error) return { success: false, error: result.error.message };
+        return { success: true };
+    });
+}
+
+function rejectUser(requestId) {
+    return supabaseClient.from('usuarios_grupo').delete().eq('id', requestId).then(function(result) {
+        if (result.error) return { success: false, error: result.error.message };
+        return { success: true };
+    });
 }
 
 function onAuthStateChanged(user) {
@@ -68,49 +132,41 @@ function onAuthStateChanged(user) {
     if (user) {
         if (loginSection) loginSection.style.display = 'none';
         if (adminSection) adminSection.style.display = 'block';
-        carregarMeusGrupos();
+        loadApp();
     } else {
         if (loginSection) loginSection.style.display = 'flex';
         if (adminSection) adminSection.style.display = 'none';
     }
 }
 
-function carregarMeusGrupos() {
-    if (!AUTH.user) return [];
-    supabaseClient.from('usuarios_grupo').select('grupo_id, grupos(nome, slug, logo_url), role').eq('user_id', AUTH.user.id).order('role', { ascending: false }).then(function(result) {
-        if (result.error) { console.error('Erro ao carregar grupos:', result.error); return; }
-        var groups = result.data || [];
+function loadApp() {
+    getMyGroups().then(function(groups) {
         renderGroupSelector(groups);
         if (groups.length === 1) {
-            carregarGrupo(groups[0].grupos.slug);
+            carregarGrupo(groups[0].slug);
         }
-    }).catch(function(err) { console.error('Erro ao carregar grupos:', err); });
+    });
 }
 
 function renderGroupSelector(groups) {
     var container = document.getElementById('groupSelector');
     if (!container || groups.length <= 1) { if (container) container.innerHTML = ''; return; }
     container.innerHTML = '<select id="grupoSelect" onchange="mudarGrupo(this.value)">' +
-        groups.map(function(g) {
-            return '<option value="' + g.grupos.slug + '">' + g.grupos.nome + '</option>';
-        }).join('') + '</select>';
+        groups.map(function(g) { return '<option value="' + g.slug + '">' + g.nome + '</option>'; }).join('') + '</select>';
 }
 
-function mudarGrupo(slug) {
-    carregarGrupo(slug);
-}
+function mudarGrupo(slug) { carregarGrupo(slug); }
 
 function carregarGrupo(slug) {
     supabaseClient.from('grupos').select('id, nome, slug, logo_url').eq('slug', slug).single().then(function(result) {
-        if (result.error || !result.data) { alert('Grupo nao encontrado: ' + slug); return; }
-        var grupo = result.data;
-        grupoAtual = grupo;
+        if (result.error || !result.data) { alert('Grupo nao encontrado'); return; }
+        grupoAtual = result.data;
         var nomeEl = document.getElementById('nomeGrupo');
         var logoEl = document.getElementById('logoGrupo');
-        if (nomeEl) nomeEl.textContent = grupo.nome;
-        if (logoEl && grupo.logo_url) logoEl.src = grupo.logo_url;
-        document.title = grupo.nome + ' - Sorteador de Times';
-        carregarJogadores(grupo.id);
+        if (nomeEl) nomeEl.textContent = grupoAtual.nome;
+        if (logoEl && grupoAtual.logo_url) logoEl.src = grupoAtual.logo_url;
+        document.title = grupoAtual.nome + ' - Sorteador de Times';
+        carregarJogadores(grupoAtual.id);
     }).catch(function(err) { console.error('Erro ao carregar grupo:', err); });
 }
 
@@ -121,6 +177,8 @@ function carregarJogadores(grupoId) {
         renderLista();
     }).catch(function(err) { console.error('Erro ao carregar jogadores:', err); });
 }
+
+var jogadores = [];
 
 function renderLista() {
     var listaEl = document.getElementById('listaJogadores');
@@ -140,11 +198,7 @@ function renderLista() {
         strong.textContent = j.nome;
         var metaDiv = document.createElement('div');
         metaDiv.className = 'jogador-meta';
-        if (j.goleiro) {
-            metaDiv.textContent = 'Goleiro';
-        } else {
-            metaDiv.textContent = j.categoria.toFixed(1);
-        }
+        if (j.goleiro) { metaDiv.textContent = 'Goleiro'; } else { metaDiv.textContent = j.categoria.toFixed(1); }
         if (j.menina) { var ms = document.createElement('em'); ms.className = 'tag-menina'; ms.textContent = ' mulher'; metaDiv.appendChild(ms); }
         if (j.convidado) { var cs = document.createElement('em'); cs.className = 'tag-convidado'; cs.textContent = ' convidado'; metaDiv.appendChild(cs); }
         infoDiv.appendChild(strong); infoDiv.appendChild(metaDiv);
@@ -164,26 +218,22 @@ function getPresentes() {
     return { linhas: linhas, goleiros: goleiros };
 }
 
+function timeComMenina(time) { return time.jogadores.some(function(j) { return j.menina; }); }
+
 function sortearTimes(linhas, goleiros, porTime) {
     var total = linhas.length + goleiros.length;
     var qtdTimes = Math.ceil(total / porTime);
     if (qtdTimes < 1) { alert('E necessario pelo menos 1 jogador'); return null; }
     if (qtdTimes === 1 && total < 2) { alert('E necessario pelo menos 2 jogadores'); return null; }
     var meninasPresentes = linhas.filter(function(j) { return j.menina; });
-    if (meninasPresentes.length > qtdTimes) {
-        alert('Ha ' + meninasPresentes.length + ' mulheres e apenas ' + qtdTimes + ' time(s). Nao e possivel separa-las.');
-        return null;
-    }
+    if (meninasPresentes.length > qtdTimes) { alert('Ha ' + meninasPresentes.length + ' mulheres e apenas ' + qtdTimes + ' time(s).'); return null; }
     var times = [];
     for (var i = 0; i < qtdTimes; i++) { times.push({ nome: 'Time ' + (i + 1), jogadores: [], forca: 0 }); }
     goleiros.forEach(function(g, i) { times[i % times.length].jogadores.push(g); });
     var ordenados = linhas.slice().sort(function() { return Math.random() - 0.5; }).sort(function(a, b) { return b.categoria - a.categoria; });
     for (var j = 0; j < ordenados.length; j++) {
         var jogador = ordenados[j];
-        var candidatos = times.filter(function(t) {
-            if (jogador.menina && timeComMenina(t)) return false;
-            return t.jogadores.length < porTime;
-        }).sort(function(a, b) { return a.forca - b.forca; });
+        var candidatos = times.filter(function(t) { if (jogador.menina && timeComMenina(t)) return false; return t.jogadores.length < porTime; }).sort(function(a, b) { return a.forca - b.forca; });
         if (candidatos.length > 0) { candidatos[0].jogadores.push(jogador); candidatos[0].forca += jogador.categoria; continue; }
         var overflow = times.filter(function(t) { return !jogador.menina || !timeComMenina(t); }).sort(function(a, b) { return a.forca - b.forca; });
         if (overflow.length === 0) { alert('Nao foi possivel separar ' + jogador.nome); return null; }
@@ -193,8 +243,6 @@ function sortearTimes(linhas, goleiros, porTime) {
     times.forEach(function(t, idx) { t.nome = 'Time ' + (idx + 1); });
     return times;
 }
-
-function timeComMenina(time) { return time.jogadores.some(function(j) { return j.menina; }); }
 
 function renderResultado(times) {
     var resultadoEl = document.getElementById('resultado');
@@ -211,7 +259,7 @@ function renderResultado(times) {
     times.forEach(function(t) {
         var div = document.createElement('div');
         div.className = 'time';
-        var html = '<h3>Time ' + t.nome + '</h3>';
+        var html = '<h3>' + t.nome + '</h3>';
         t.jogadores.forEach(function(j) { html += j.goleiro ? '<div class="goleiro">Goleiro ' + j.nome + '</div>' : '<div>' + j.nome + '</div>'; });
         div.innerHTML = html;
         grid.appendChild(div);
@@ -289,29 +337,58 @@ function compartilharImagem() {
             el.style.fontFamily = originalFont;
             canvas.toBlob(function(blob) {
                 var file = new File([blob], 'times.png', { type: 'image/png' });
-                if (navigator.share) {
-                    navigator.share({ title: grupoAtual.nome, text: 'Times da pelada', files: [file] });
-                } else {
-                    alert('Compartilhamento nao suportado.');
-                }
+                if (navigator.share) { navigator.share({ title: grupoAtual.nome, text: 'Times da pelada', files: [file] }); }
+                else { alert('Compartilhamento nao suportado.'); }
             });
         });
     });
 }
 
-function bindEventos() {
-    var b = document.getElementById('btnSortear'); if (b) b.addEventListener('click', realizarSorteio);
-    var b2 = document.getElementById('btnResortear'); if (b2) b2.addEventListener('click', realizarSorteio);
-    var b3 = document.getElementById('btnCompartilhar'); if (b3) b3.addEventListener('click', compartilharImagem);
-    var b4 = document.getElementById('btnDesmarcar'); if (b4) b4.addEventListener('click', desmarcarTodos);
-    var b5 = document.getElementById('btnAdicionar'); if (b5) b5.addEventListener('click', adicionarConvidado);
+function loginWithEmail(email, password) {
+    AUTH.loading = true;
+    return supabaseClient.auth.signInWithPassword({ email: email.trim(), password: password }).then(function(result) {
+        if (result.error) return { success: false, error: result.error.message };
+        return { success: true, message: 'Logado com sucesso!' };
+    }).finally(function() { AUTH.loading = false; });
+}
+
+function logout() {
+    supabaseClient.auth.signOut().then(function() { AUTH.user = null; AUTH.session = null; onAuthStateChanged(null); }).catch(function(err) { console.error('Erro ao logout:', err); });
 }
 
 function renderLoginScreen() {
     var ls = document.getElementById('loginSection');
     if (!ls) return;
-    ls.innerHTML = '<div class="login-overlay"><div class="login-card"><div class="login-header"><h2>Boleiros de Cristo</h2><p>Area do organizador</p></div><div class="login-body"><div id="loginForm"><div class="form-group"><label for="loginEmail">Seu e-mail</label><input type="email" id="loginEmail" placeholder="seu@email.com" autocomplete="email"></div><div class="form-group"><label for="loginPassword">Sua senha</label><input type="password" id="loginPassword" placeholder="Sua senha" autocomplete="current-password"></div><button id="btnLogin" class="btn-primary" onclick="doLogin()">Entrar</button><p class="login-hint">Digite email e senha cadastrados.</p></div><div id="loginLoading" style="display:none;"><p>Entrando...</p></div><div id="loginStatus"></div></div></div></div>';
+    ls.innerHTML = '<div class="login-overlay"><div class="login-card"><div class="login-header"><h2>Boleiros de Cristo</h2><p>Area do organizador</p></div><div class="login-body"><div id="loginForm"><div class="form-group"><label for="loginEmail">Seu e-mail</label><input type="email" id="loginEmail" placeholder="seu@email.com" autocomplete="email"></div><div class="form-group"><label for="loginPassword">Sua senha</label><input type="password" id="loginPassword" placeholder="Sua senha" autocomplete="current-password"></div><button id="btnLogin" class="btn-primary" onclick="doLogin()">Entrar</button><p id="loginSwitchText" class="login-hint"><a href="#" onclick="showNewUserForm(); return false;">Nao tem conta? Clique aqui</a></p></div><div id="newUserForm" style="display:none;"><p>Novo usuario - escolha uma opcao:</p><button class="btn-primary" onclick="showCreateGroup()">Criar grupo</button><button class="btn-secondary" onclick="showJoinGroup()">Entrar em grupo</button><p class="login-hint"><a href="#" onclick="showLoginForm(); return false;">Voltar</a></p></div><div id="loginLoading" style="display:none;"><p>Entrando...</p></div><div id="loginStatus"></div></div></div></div>';
     ls.style.display = 'flex';
+}
+
+function showNewUserForm() {
+    var form = document.getElementById('loginForm');
+    var newForm = document.getElementById('newUserForm');
+    var switchText = document.getElementById('loginSwitchText');
+    if (form) form.style.display = 'none';
+    if (newForm) newForm.style.display = 'block';
+    if (switchText) switchText.style.display = 'none';
+}
+
+function showLoginForm() {
+    var form = document.getElementById('loginForm');
+    var newForm = document.getElementById('newUserForm');
+    var switchText = document.getElementById('loginSwitchText');
+    if (form) form.style.display = 'block';
+    if (newForm) newForm.style.display = 'none';
+    if (switchText) switchText.style.display = 'block';
+}
+
+function showCreateGroup() {
+    var ls = document.getElementById('loginSection');
+    ls.innerHTML = '<div class="login-overlay"><div class="login-card"><div class="login-header"><h2>Criar Grupo</h2><p>Crie seu grupo de pelada</p></div><div class="login-body"><div id="createGroupForm"><div class="form-group"><label for="newUsername">Nome do grupo</label><input type="text" id="newUsername" placeholder="Nome do grupo"></div><div class="form-group"><label for="newEmail">Seu e-mail</label><input type="email" id="newEmail" placeholder="seu@email.com"></div><div class="form-group"><label for="newPassword">Senha</label><input type="password" id="newPassword" placeholder="Senha"></div><button class="btn-primary" onclick="doCreateGroup()">Criar Grupo</button><p class="login-hint"><a href="#" onclick="showLoginForm(); return false;">Voltar</a></p></div><div id="createGroupLoading" style="display:none;"><p>Criando...</p></div><div id="createGroupStatus"></div></div></div></div>';
+}
+
+function showJoinGroup() {
+    var ls = document.getElementById('loginSection');
+    ls.innerHTML = '<div class="login-overlay"><div class="login-card"><div class="login-header"><h2>Entrar em Grupo</h2><p>Insira o codigo do grupo</p></div><div class="login-body"><div id="joinGroupForm"><div class="form-group"><label for="joinEmail">Seu e-mail</label><input type="email" id="joinEmail" placeholder="seu@email.com"></div><div class="form-group"><label for="joinPassword">Sua senha</label><input type="password" id="joinPassword" placeholder="Sua senha"></div><div class="form-group"><label for="joinSlug">Codigo do grupo (slug)</label><input type="text" id="joinSlug" placeholder="ex: boleiros-de-cristo"></div><button class="btn-primary" onclick="doJoinGroup()">Entrar</button><p class="login-hint"><a href="#" onclick="showLoginForm(); return false;">Voltar</a></p></div><div id="joinGroupLoading" style="display:none;"><p>Solicitando...</p></div><div id="joinGroupStatus"></div></div></div></div>';
 }
 
 function doLogin() {
@@ -329,6 +406,47 @@ function doLogin() {
         if (loadingEl) loadingEl.style.display = 'none';
         if (formEl) formEl.style.display = 'block';
         if (statusEl) statusEl.innerHTML = result.success ? '<p class="login-success">' + result.message + '</p>' : '<p class="login-error">Erro: ' + result.error + '</p>';
+    });
+}
+
+function doCreateGroup() {
+    var username = document.getElementById('newUsername').value.trim();
+    var email = document.getElementById('newEmail').value.trim();
+    var password = document.getElementById('newPassword').value;
+    if (!username) { alert('Informe o nome do grupo.'); return; }
+    if (!email || !email.includes('@')) { alert('Informe um e-mail valido.'); return; }
+    if (!password) { alert('Informe uma senha.'); return; }
+    var formEl = document.getElementById('createGroupForm');
+    var loadingEl = document.getElementById('createGroupLoading');
+    var statusEl = document.getElementById('createGroupStatus');
+    if (formEl) formEl.style.display = 'none';
+    if (loadingEl) loadingEl.style.display = 'block';
+    if (statusEl) statusEl.innerHTML = '';
+    createUserAndGroup(email, password, username).then(function(result) {
+        if (loadingEl) loadingEl.style.display = 'none';
+        if (formEl) formEl.style.display = 'block';
+        if (statusEl) statusEl.innerHTML = result.success ? '<p class="login-success">Grupo criado! Entrando...</p>' : '<p class="login-error">Erro: ' + result.error + '</p>';
+        if (result.success) { setTimeout(function() { initAuth(); }, 2000); }
+    });
+}
+
+function doJoinGroup() {
+    var email = document.getElementById('joinEmail').value.trim();
+    var password = document.getElementById('joinPassword').value;
+    var slug = document.getElementById('joinSlug').value.trim();
+    if (!email || !email.includes('@')) { alert('Informe um e-mail valido.'); return; }
+    if (!password) { alert('Informe sua senha.'); return; }
+    if (!slug) { alert('Informe o codigo do grupo.'); return; }
+    var formEl = document.getElementById('joinGroupForm');
+    var loadingEl = document.getElementById('joinGroupLoading');
+    var statusEl = document.getElementById('joinGroupStatus');
+    if (formEl) formEl.style.display = 'none';
+    if (loadingEl) loadingEl.style.display = 'block';
+    if (statusEl) statusEl.innerHTML = '';
+    joinGroup(email, password, slug).then(function(result) {
+        if (loadingEl) loadingEl.style.display = 'none';
+        if (formEl) formEl.style.display = 'block';
+        if (statusEl) statusEl.innerHTML = result.success ? '<p class="login-success">Solicitacao enviada! Aguarde aprovacao do owner.</p>' : '<p class="login-error">Erro: ' + result.error + '</p>';
     });
 }
 

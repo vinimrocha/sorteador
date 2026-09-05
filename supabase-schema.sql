@@ -15,6 +15,7 @@ create table if not exists public.usuarios_grupo (
   email text not null,
   user_id uuid references auth.users(id) on delete set null,
   role text not null default 'admin',
+  status text not null default 'approved',
   created_at timestamptz default now(),
   constraint unique_grupo_email unique (grupo_id, email)
 );
@@ -90,16 +91,32 @@ begin
     select 1 from public.usuarios_grupo
     where grupo_id = grupo_uuid
       and user_id = auth.uid()
+      and status = 'approved'
   );
 end;
 $$ language plpgsql security definer;
+
+create or replace function public.set_owner_approved()
+returns trigger as $$
+begin
+  if (NEW.role = 'owner') then
+    NEW.status := 'approved';
+  end if;
+  return NEW;
+end;
+$$ language plpgsql security definer;
+
+create trigger trg_owner_auto_approved
+before insert on public.usuarios_grupo
+for each row execute function public.set_owner_approved();
 
 create policy "Grupos visiveis publicamente" on public.grupos for select using (true);
 create policy "Usuarios autenticados criam grupo" on public.grupos for insert to authenticated with check (true);
 create policy "Admins atualizam grupos" on public.grupos for update to authenticated using (public.is_admin_do_grupo(id));
 create policy "Admins deletam grupos" on public.grupos for delete to authenticated using (public.is_admin_do_grupo(id));
+
 create policy "Membros veem admins" on public.usuarios_grupo for select to authenticated using (public.is_admin_do_grupo(grupo_id));
-create policy "Admins adicionam admins" on public.usuarios_grupo for insert to authenticated with check (public.is_admin_do_grupo(grupo_id));
+create policy "Admins aprovam pending" on public.usuarios_grupo for update to authenticated with check (public.is_admin_do_grupo(grupo_id));
 create policy "Admins removem admins" on public.usuarios_grupo for delete to authenticated using (public.is_admin_do_grupo(grupo_id));
 create policy "Jogadores visiveis publicamente" on public.jogadores for select using (ativo = true);
 create policy "Admins inserem jogadores" on public.jogadores for insert to authenticated with check (public.is_admin_do_grupo(grupo_id));
@@ -111,7 +128,7 @@ declare v_grupo_id uuid;
 begin
   insert into public.grupos (nome, slug, logo_url) values ('Boleiros de Cristo', 'boleiros-de-cristo', 'logo-boleiros.png') on conflict (slug) do nothing returning id into v_grupo_id;
   if v_grupo_id is null then select id into v_grupo_id from public.grupos where slug = 'boleiros-de-cristo'; end if;
-  insert into public.usuarios_grupo (grupo_id, email, role) values (v_grupo_id, 'SEU-EMAIL@EXEMPLO.COM', 'owner') on conflict (grupo_id, email) do nothing;
+  insert into public.usuarios_grupo (grupo_id, email, role, status) values (v_grupo_id, 'SEU-EMAIL@EXEMPLO.COM', 'owner', 'approved') on conflict (grupo_id, email) do nothing;
 end;
 $$;
 
