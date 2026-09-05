@@ -724,7 +724,9 @@ flex: 1;
     font-size: 14px;
 }
 
-.login-body input[type="email"] {
+.login-body input[type="email"],
+.login-body input[type="text"],
+.login-body input[type="password"] {
     width: 100%;
     padding: 14px 16px;
     border: 2px solid var(--border);
@@ -734,8 +736,16 @@ flex: 1;
     outline: none;
 }
 
-.login-body input[type="email"]:focus {
+.login-body input[type="email"]:focus,
+.login-body input[type="text"]:focus,
+.login-body input[type="password"]:focus {
     border-color: var(--primary);
+}
+
+.login-body input[type="file"] {
+    width: 100%;
+    font-size: 13px;
+    color: var(--muted);
 }
 
 .login-hint {
@@ -875,4 +885,65 @@ flex: 1;
     font-weight: 600;
     display: inline-block;
     margin-bottom: 8px;
+}
+
+/* =========================
+   BARRA DO USUARIO LOGADO
+   ========================= */
+
+.admin-bar {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 10px;
+    padding: 8px 20px;
+    max-width: 900px;
+    margin: 0 auto;
+}
+
+.admin-bar .btn-compact {
+    width: auto;
+    margin-top: 0;
+}
+
+.admin-user {
+    font-size: 13px;
+    font-weight: 600;
+    color: var(--muted);
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+}
+
+/* =========================
+   TELA AGUARDANDO APROVACAO
+   ========================= */
+
+.waiting-list {
+    list-style: none;
+    margin-bottom: 16px;
+}
+
+.waiting-list li {
+    padding: 10px 12px;
+    background: #fff8e1;
+    border: 1px solid #ffe0b2;
+    border-radius: 8px;
+    font-size: 14px;
+    margin-bottom: 8px;
+}
+
+#pendingPanel {
+    max-width: 900px;
+    margin: 0 auto;
+    padding: 0 12px;
+}
+
+#pendingPanel .pending-panel {
+    margin-top: 8px;
+}
+
+.pending-actions .btn-compact {
+    width: auto;
+    margin-top: 0;
 }

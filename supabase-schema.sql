@@ -36,6 +36,8 @@ alter table if exists public.usuarios_grupo add column if not exists status text
 create index if not exists idx_jogadores_grupo on public.jogadores(grupo_id);
 create index if not exists idx_usuarios_grupo_email on public.usuarios_grupo(lower(email));
 create index if not exists idx_grupos_slug on public.grupos(slug);
+-- Regra: 1 owner por grupo (owner tambem conta no limite de 5 do trigger)
+create unique index if not exists unique_owner_por_grupo on public.usuarios_grupo(grupo_id) where role = 'owner';
 
 create or replace function public.check_limite_usuarios_grupo()
 returns trigger as $$
@@ -130,10 +132,14 @@ create policy "Admins atualizam grupos" on public.grupos for update to authentic
 create policy "Admins deletam grupos" on public.grupos for delete to authenticated using (public.is_admin_do_grupo(id));
 
 drop policy if exists "Membros veem admins" on public.usuarios_grupo;
+drop policy if exists "Usuarios veem proprio vinculo" on public.usuarios_grupo;
+drop policy if exists "Usuarios criam proprio vinculo" on public.usuarios_grupo;
 drop policy if exists "Admins aprovam pending" on public.usuarios_grupo;
 drop policy if exists "Admins removem admins" on public.usuarios_grupo;
 create policy "Membros veem admins" on public.usuarios_grupo for select to authenticated using (public.is_admin_do_grupo(grupo_id));
-create policy "Admins aprovam pending" on public.usuarios_grupo for update to authenticated with check (public.is_admin_do_grupo(grupo_id));
+create policy "Usuarios veem proprio vinculo" on public.usuarios_grupo for select to authenticated using (user_id = auth.uid());
+create policy "Usuarios criam proprio vinculo" on public.usuarios_grupo for insert to authenticated with check (user_id = auth.uid());
+create policy "Admins aprovam pending" on public.usuarios_grupo for update to authenticated using (public.is_admin_do_grupo(grupo_id)) with check (public.is_admin_do_grupo(grupo_id));
 create policy "Admins removem admins" on public.usuarios_grupo for delete to authenticated using (public.is_admin_do_grupo(grupo_id));
 
 drop policy if exists "Jogadores visiveis publicamente" on public.jogadores;

@@ -43,23 +43,71 @@ function initAuth() {
     }
 }
 
-function checkEmailExists(email) {
-    return supabaseClient.auth.admin.listUsers().then(function(result) {
-        if (result.error) return { exists: false, error: result.error };
-        var users = result.data.users || [];
-        var found = users.find(function(u) { return u.email === email.trim().toLowerCase(); });
-        return { exists: !!found, user: found || null };
-    }).catch(function(err) { return { exists: false, error: err }; });
+/* Cadastro temporario entre signup e escolha criar/entrar em grupo */
+var PENDING_SIGNUP = null;
+
+function slugify(texto) {
+    return (texto || '').toLowerCase().normalize('NFD').replace(/[\u0300-\u036f]/g, '')
+        .replace(/[^a-z0-9]+/g, '-').replace(/^-+|-+$/g, '').substring(0, 30) || 'grupo';
 }
 
-function createUserAndGroup(email, password, username) {
-    return supabaseClient.auth.signUp({ email: email.trim(), password: password }).then(function(result) {
-        if (result.error) return { success: false, error: result.error.message };
-        return { success: true, user: result.data.user };
+/* Garante sessao apos signUp (quando confirmacao de email esta desligada). */
+function ensureSession(email, password) {
+    return supabaseClient.auth.getSession().then(function(result) {
+        if (result.data && result.data.session) return { success: true, session: result.data.session };
+        return supabaseClient.auth.signInWithPassword({ email: email.trim(), password: password }).then(function(r) {
+            if (r.error) return { success: false, error: r.error.message };
+            return { success: true, session: r.data.session };
+        });
+    });
+}
+
+/* Cria o usuario no Supabase Auth (authentication/users).
+   Dados do usuario: email (pk), senha, Nome de usuario (user_metadata.display_name). */
+function signupUser(email, password, username) {
+    return supabaseClient.auth.signUp({
+        email: email.trim().toLowerCase(),
+        password: password,
+        options: { data: { display_name: username.trim() } }
+    }).then(function(result) {
+        if (result.error) {
+            if (result.error.message && result.error.message.toLowerCase().indexOf('already registered') >= 0) {
+                return { success: false, alreadyRegistered: true, error: 'Este e-mail ja tem conta. Faca login.' };
+            }
+            return { success: false, error: result.error.message };
+        }
+        var user = result.data.user;
+        PENDING_SIGNUP = { email: email.trim().toLowerCase(), password: password, username: username.trim(), userId: user ? user.id : null };
+        return ensureSession(email, password).then(function(s) {
+            if (!s.success) return { success: false, error: 'Conta criada! Confirme seu e-mail e faca login.' };
+            AUTH.session = s.session;
+            AUTH.user = s.session.user;
+            if (PENDING_SIGNUP) PENDING_SIGNUP.userId = AUTH.user.id;
+            return { success: true, user: AUTH.user };
+        });
+    });
+}
+
+/* Cria grupo (nome + logo) e vincula o usuario como owner (aprovado). */
+function createUserAndGroup(email, password, username, nomeGrupo, logoUrl) {
+    var ctx = null;
+    return signupUser(email, password, username).then(function(result) {
+        if (!result.success && !result.alreadyRegistered) return result;
+        if (result.alreadyRegistered) {
+            return ensureSession(email, password).then(function(s) {
+                if (!s.success) return { success: false, error: 'Este e-mail ja tem conta. Faca login.' };
+                AUTH.session = s.session;
+                AUTH.user = s.session.user;
+                PENDING_SIGNUP = { email: email.trim().toLowerCase(), password: password, username: username.trim(), userId: AUTH.user.id };
+                return { success: true, user: AUTH.user };
+            });
+        }
+        return result;
     }).then(function(result) {
         if (!result.success) return result;
-        var slug = username.toLowerCase().replace(/[^a-z0-9]/g, '-').substring(0, 30) + '-' + Date.now().toString(36);
-        return supabaseClient.from('grupos').insert({ nome: username, slug: slug, logo_url: 'logo-boleiros.png' }).select().then(function(r) {
+        ctx = { userId: AUTH.user.id, email: email.trim().toLowerCase() };
+        var slug = slugify(nomeGrupo) + '-' + Date.now().toString(36);
+        return supabaseClient.from('grupos').insert({ nome: nomeGrupo.trim(), slug: slug, logo_url: (logoUrl || 'logo-boleiros.png') }).select().then(function(r) {
             if (r.error) return { success: false, error: r.error.message };
             return { success: true, grupo: r.data[0] };
         });
@@ -67,29 +115,60 @@ function createUserAndGroup(email, password, username) {
         if (!result.success) return result;
         return supabaseClient.from('usuarios_grupo').insert({
             grupo_id: result.grupo.id,
-            email: email.trim(),
+            email: ctx.email,
+            user_id: ctx.userId,
             role: 'owner',
             status: 'approved'
         }).select().then(function(r) {
             if (r.error) return { success: false, error: r.error.message };
-            return { success: true };
+            PENDING_SIGNUP = null;
+            return { success: true, grupo: result.grupo };
         });
     });
 }
 
-function joinGroup(email, password, groupSlug) {
-    return supabaseClient.auth.signUp({ email: email.trim(), password: password }).then(function(result) {
-        if (result.error) return { success: false, error: result.error.message };
-        return supabaseClient.from('grupos').select('id').eq('slug', groupSlug).single().then(function(r) {
-            if (r.error || !r.data) return { success: false, error: 'Grupo nao encontrado' };
+/* Pede para entrar em grupo existente: cria conta (se preciso) e registra
+   pedido pendente de admin para aprovacao do owner. */
+function joinGroup(email, password, username, groupSlug) {
+    var ctx = null;
+    var grupo = null;
+    return signupUser(email, password, username).then(function(result) {
+        if (!result.success && !result.alreadyRegistered) return result;
+        if (result.alreadyRegistered) {
+            return ensureSession(email, password).then(function(s) {
+                if (!s.success) return { success: false, error: 'Este e-mail ja tem conta. Faca login.' };
+                AUTH.session = s.session;
+                AUTH.user = s.session.user;
+                PENDING_SIGNUP = { email: email.trim().toLowerCase(), password: password, username: (username || '').trim(), userId: AUTH.user.id };
+                return { success: true, user: AUTH.user };
+            });
+        }
+        return result;
+    }).then(function(result) {
+        if (!result.success) return result;
+        ctx = { userId: AUTH.user.id, email: email.trim().toLowerCase() };
+        return supabaseClient.from('grupos').select('id, nome, slug').eq('slug', groupSlug.trim().toLowerCase()).single().then(function(r) {
+            if (r.error || !r.data) return { success: false, error: 'Grupo nao encontrado. Confira o codigo.' };
+            grupo = r.data;
+            return supabaseClient.from('usuarios_grupo').select('id, status').eq('grupo_id', grupo.id).eq('user_id', ctx.userId).maybeSingle().then(function(ex) {
+                if (ex.data) return { success: false, error: ex.data.status === 'approved' ? 'Voce ja e admin deste grupo.' : 'Pedido ja enviado. Aguarde aprovacao do owner.' };
+                return { success: true };
+            });
+        });
+    }).then(function(result) {
+        if (!result.success) return result;
+        return supabaseClient.from('usuarios_grupo').select('id', { count: 'exact' }).eq('grupo_id', grupo.id).then(function(c) {
+            if ((c.count || 0) >= 5) return { success: false, error: 'Este grupo ja tem 5 administradores (limite).' };
             return supabaseClient.from('usuarios_grupo').insert({
-                grupo_id: r.data.id,
-                email: email.trim(),
+                grupo_id: grupo.id,
+                email: ctx.email,
+                user_id: ctx.userId,
                 role: 'admin',
                 status: 'pending'
             }).select().then(function(ir) {
                 if (ir.error) return { success: false, error: ir.error.message };
-                return { success: true };
+                PENDING_SIGNUP = null;
+                return { success: true, grupo: grupo };
             });
         });
     });
@@ -129,22 +208,100 @@ function rejectUser(requestId) {
 function onAuthStateChanged(user) {
     var loginSection = document.getElementById('loginSection');
     var adminSection = document.getElementById('adminSection');
+    var mainEl = document.getElementById('mainApp');
     if (user) {
-        if (loginSection) loginSection.style.display = 'none';
+        if (loginSection) { loginSection.innerHTML = ''; loginSection.style.display = 'none'; }
         if (adminSection) adminSection.style.display = 'block';
         loadApp();
     } else {
         if (loginSection) loginSection.style.display = 'flex';
         if (adminSection) adminSection.style.display = 'none';
+        if (mainEl) mainEl.style.display = 'none';
+        var panel = document.getElementById('pendingPanel');
+        if (panel) panel.innerHTML = '';
+        renderLoginScreen();
     }
+}
+
+function displayName() {
+    if (AUTH.user && AUTH.user.user_metadata && AUTH.user.user_metadata.display_name) return AUTH.user.user_metadata.display_name;
+    return AUTH.user ? AUTH.user.email : '';
 }
 
 function loadApp() {
     getMyGroups().then(function(groups) {
-        renderGroupSelector(groups);
-        if (groups.length === 1) {
-            carregarGrupo(groups[0].slug);
+        var approved = groups.filter(function(g) { return g.status === 'approved'; });
+        var pending = groups.filter(function(g) { return g.status !== 'approved'; });
+        renderUserBar();
+        var mainEl = document.getElementById('mainApp');
+        if (approved.length === 0) {
+            if (mainEl) mainEl.style.display = 'none';
+            showWaitingScreen(pending);
+            renderPendingPanel([]);
+            return;
         }
+        if (mainEl) mainEl.style.display = 'block';
+        hideWaitingScreen();
+        renderGroupSelector(approved);
+        carregarGrupo(approved[0].slug);
+        renderPendingPanel(approved.filter(function(g) { return g.role === 'owner'; }));
+    });
+}
+
+function showWaitingScreen(pending) {
+    var ls = document.getElementById('loginSection');
+    if (!ls) return;
+    var nome = displayName();
+    var lista = pending.length
+        ? pending.map(function(g) { return '<li>' + g.nome + ' (' + g.slug + ') — aguardando aprovacao do owner</li>'; }).join('')
+        : '<li>Seu pedido foi registrado. Aguarde aprovacao do owner.</li>';
+    ls.innerHTML = '<div class="login-overlay"><div class="login-card"><div class="login-header"><h2>Ola, ' + nome + '</h2><p>Seu acesso esta pendente</p></div><div class="login-body"><ul class="waiting-list">' + lista + '</ul><button class="btn-secondary" onclick="logout()">Sair</button></div></div></div>';
+    ls.style.display = 'flex';
+}
+
+function hideWaitingScreen() {
+    var ls = document.getElementById('loginSection');
+    if (ls) { ls.innerHTML = ''; ls.style.display = 'none'; }
+}
+
+function renderUserBar() {
+    var el = document.getElementById('userInfo');
+    if (el) el.textContent = displayName();
+}
+
+function renderPendingPanel(ownerGroups) {
+    var panel = document.getElementById('pendingPanel');
+    if (!panel) return;
+    if (!ownerGroups || !ownerGroups.length) { panel.innerHTML = ''; return; }
+    var promises = ownerGroups.map(function(g) {
+        return getPendingRequests(g.id).then(function(reqs) { return { grupo: g, pedidos: reqs }; });
+    });
+    Promise.all(promises).then(function(resultados) {
+        var html = '';
+        resultados.forEach(function(r) {
+            if (!r.pedidos.length) return;
+            html += '<div class="pending-panel"><h3>Pedidos pendentes — ' + r.grupo.nome + '</h3>';
+            r.pedidos.forEach(function(p) {
+                html += '<div class="pending-item"><span class="pending-email">' + p.email + '</span><span class="pending-actions"><button class="btn-success btn-compact" onclick="doApprove(\'' + p.id + '\')">Aprovar</button> <button class="btn-secondary btn-compact" onclick="doReject(\'' + p.id + '\')">Recusar</button></span></div>';
+            });
+            html += '</div>';
+        });
+        panel.innerHTML = html;
+    });
+}
+
+function doApprove(requestId) {
+    approveUser(requestId).then(function(r) {
+        if (!r.success) { alert('Erro: ' + r.error); return; }
+        loadApp();
+    });
+}
+
+function doReject(requestId) {
+    if (!confirm('Recusar este pedido?')) return;
+    rejectUser(requestId).then(function(r) {
+        if (!r.success) { alert('Erro: ' + r.error); return; }
+        loadApp();
     });
 }
 
@@ -347,48 +504,73 @@ function compartilharImagem() {
 function loginWithEmail(email, password) {
     AUTH.loading = true;
     return supabaseClient.auth.signInWithPassword({ email: email.trim(), password: password }).then(function(result) {
-        if (result.error) return { success: false, error: result.error.message };
+        if (result.error) {
+            var msg = (result.error.message || '').toLowerCase();
+            if (msg.indexOf('invalid login credentials') >= 0 || msg.indexOf('invalid') >= 0) {
+                return { success: false, notFound: true, error: 'E-mail nao encontrado.' };
+            }
+            return { success: false, error: result.error.message };
+        }
         return { success: true, message: 'Logado com sucesso!' };
     }).finally(function() { AUTH.loading = false; });
 }
 
 function logout() {
+    PENDING_SIGNUP = null;
     supabaseClient.auth.signOut().then(function() { AUTH.user = null; AUTH.session = null; onAuthStateChanged(null); }).catch(function(err) { console.error('Erro ao logout:', err); });
 }
 
 function renderLoginScreen() {
     var ls = document.getElementById('loginSection');
     if (!ls) return;
-    ls.innerHTML = '<div class="login-overlay"><div class="login-card"><div class="login-header"><h2>Boleiros de Cristo</h2><p>Area do organizador</p></div><div class="login-body"><div id="loginForm"><div class="form-group"><label for="loginEmail">Seu e-mail</label><input type="email" id="loginEmail" placeholder="seu@email.com" autocomplete="email"></div><div class="form-group"><label for="loginPassword">Sua senha</label><input type="password" id="loginPassword" placeholder="Sua senha" autocomplete="current-password"></div><button id="btnLogin" class="btn-primary" onclick="doLogin()">Entrar</button><p id="loginSwitchText" class="login-hint"><a href="#" onclick="showNewUserForm(); return false;">Nao tem conta? Clique aqui</a></p></div><div id="newUserForm" style="display:none;"><p>Novo usuario - escolha uma opcao:</p><button class="btn-primary" onclick="showCreateGroup()">Criar grupo</button><button class="btn-secondary" onclick="showJoinGroup()">Entrar em grupo</button><p class="login-hint"><a href="#" onclick="showLoginForm(); return false;">Voltar</a></p></div><div id="loginLoading" style="display:none;"><p>Entrando...</p></div><div id="loginStatus"></div></div></div></div>';
+    var mainEl = document.getElementById('mainApp');
+    if (mainEl && !AUTH.user) mainEl.style.display = 'none';
+    ls.innerHTML = '<div class="login-overlay"><div class="login-card"><div class="login-header"><h2>Boleiros de Cristo</h2><p>Area do organizador</p></div><div class="login-body"><div id="loginForm"><div class="form-group"><label for="loginEmail">Seu e-mail</label><input type="email" id="loginEmail" placeholder="seu@email.com" autocomplete="email"></div><div class="form-group"><label for="loginPassword">Sua senha</label><input type="password" id="loginPassword" placeholder="Sua senha" autocomplete="current-password"></div><button id="btnLogin" class="btn-primary" onclick="doLogin()">Entrar</button><p id="loginSwitchText" class="login-hint"><a href="#" onclick="showSignupForm(); return false;">Nao tem conta? Cadastre-se</a></p></div><div id="loginLoading" style="display:none;"><p>Entrando...</p></div><div id="loginStatus"></div></div></div></div>';
     ls.style.display = 'flex';
 }
 
-function showNewUserForm() {
-    var form = document.getElementById('loginForm');
-    var newForm = document.getElementById('newUserForm');
-    var switchText = document.getElementById('loginSwitchText');
-    if (form) form.style.display = 'none';
-    if (newForm) newForm.style.display = 'block';
-    if (switchText) switchText.style.display = 'none';
+/* Cadastro: cria o usuario no Supabase Auth e oferece Criar grupo / Entrar em grupo */
+function showSignupForm(prefillEmail) {
+    var ls = document.getElementById('loginSection');
+    if (!ls) return;
+    ls.innerHTML = '<div class="login-overlay"><div class="login-card"><div class="login-header"><h2>Criar conta</h2><p>Primeiro, crie seu usuario</p></div><div class="login-body"><div id="signupForm"><div class="form-group"><label for="signupUsername">Nome de usuario</label><input type="text" id="signupUsername" placeholder="Seu nome" autocomplete="nickname"></div><div class="form-group"><label for="signupEmail">Seu e-mail</label><input type="email" id="signupEmail" placeholder="seu@email.com" autocomplete="email" value="' + (prefillEmail || '') + '"></div><div class="form-group"><label for="signupPassword">Senha</label><input type="password" id="signupPassword" placeholder="Minimo 6 caracteres" autocomplete="new-password"></div><button class="btn-primary" onclick="doSignup()">Criar conta</button><p class="login-hint"><a href="#" onclick="renderLoginScreen(); return false;">Ja tenho conta</a></p></div><div id="signupLoading" style="display:none;"><p>Criando...</p></div><div id="signupStatus"></div></div></div></div>';
+    ls.style.display = 'flex';
 }
 
-function showLoginForm() {
-    var form = document.getElementById('loginForm');
-    var newForm = document.getElementById('newUserForm');
-    var switchText = document.getElementById('loginSwitchText');
-    if (form) form.style.display = 'block';
-    if (newForm) newForm.style.display = 'none';
-    if (switchText) switchText.style.display = 'block';
+function showGroupChoice() {
+    var ls = document.getElementById('loginSection');
+    if (!ls || !PENDING_SIGNUP) { renderLoginScreen(); return; }
+    ls.innerHTML = '<div class="login-overlay"><div class="login-card"><div class="login-header"><h2>Ola, ' + PENDING_SIGNUP.username + '</h2><p>Conta criada! Escolha uma opcao:</p></div><div class="login-body"><div id="newUserForm"><button class="btn-primary" onclick="showCreateGroup()">Criar grupo</button><button class="btn-secondary" onclick="showJoinGroup()">Entrar em grupo</button><p class="login-hint"><a href="#" onclick="logout(); return false;">Sair</a></p></div></div></div></div>';
+    ls.style.display = 'flex';
 }
 
 function showCreateGroup() {
     var ls = document.getElementById('loginSection');
-    ls.innerHTML = '<div class="login-overlay"><div class="login-card"><div class="login-header"><h2>Criar Grupo</h2><p>Crie seu grupo de pelada</p></div><div class="login-body"><div id="createGroupForm"><div class="form-group"><label for="newUsername">Nome do grupo</label><input type="text" id="newUsername" placeholder="Nome do grupo"></div><div class="form-group"><label for="newEmail">Seu e-mail</label><input type="email" id="newEmail" placeholder="seu@email.com"></div><div class="form-group"><label for="newPassword">Senha</label><input type="password" id="newPassword" placeholder="Senha"></div><button class="btn-primary" onclick="doCreateGroup()">Criar Grupo</button><p class="login-hint"><a href="#" onclick="showLoginForm(); return false;">Voltar</a></p></div><div id="createGroupLoading" style="display:none;"><p>Criando...</p></div><div id="createGroupStatus"></div></div></div></div>';
+    if (!ls) return;
+    var email = PENDING_SIGNUP ? PENDING_SIGNUP.email : '';
+    var username = PENDING_SIGNUP ? PENDING_SIGNUP.username : '';
+    ls.innerHTML = '<div class="login-overlay"><div class="login-card"><div class="login-header"><h2>Criar Grupo</h2><p>Voce sera o owner do grupo</p></div><div class="login-body"><div id="createGroupForm"><div class="form-group"><label for="groupName">Nome do grupo</label><input type="text" id="groupName" placeholder="Ex: Boleiros de Cristo"></div><div class="form-group"><label for="groupLogo">Logo (URL ou arquivo)</label><input type="text" id="groupLogo" placeholder="logo-boleiros.png (opcional)"><input type="file" id="groupLogoFile" accept="image/*" style="margin-top:8px;"><img id="groupLogoPreview" style="display:none;max-width:96px;margin-top:8px;border-radius:8px;"></div><div class="form-group"><label for="newUsername">Seu nome de usuario</label><input type="text" id="newUsername" placeholder="Seu nome" value="' + username + '"></div><div class="form-group"><label for="newEmail">Seu e-mail</label><input type="email" id="newEmail" placeholder="seu@email.com" value="' + email + '"></div><div class="form-group"><label for="newPassword">Senha</label><input type="password" id="newPassword" placeholder="Sua senha"></div><button class="btn-primary" onclick="doCreateGroup()">Criar Grupo</button><p class="login-hint"><a href="#" onclick="showGroupChoice(); return false;">Voltar</a></p></div><div id="createGroupLoading" style="display:none;"><p>Criando...</p></div><div id="createGroupStatus"></div></div></div></div>';
+    var fileInput = document.getElementById('groupLogoFile');
+    if (fileInput) fileInput.addEventListener('change', function() {
+        var f = fileInput.files && fileInput.files[0];
+        if (!f) return;
+        var reader = new FileReader();
+        reader.onload = function(e) {
+            var prev = document.getElementById('groupLogoPreview');
+            if (prev) { prev.src = e.target.result; prev.style.display = 'block'; }
+            var urlInput = document.getElementById('groupLogo');
+            if (urlInput) urlInput.value = e.target.result;
+        };
+        reader.readAsDataURL(f);
+    });
 }
 
 function showJoinGroup() {
     var ls = document.getElementById('loginSection');
-    ls.innerHTML = '<div class="login-overlay"><div class="login-card"><div class="login-header"><h2>Entrar em Grupo</h2><p>Insira o codigo do grupo</p></div><div class="login-body"><div id="joinGroupForm"><div class="form-group"><label for="joinEmail">Seu e-mail</label><input type="email" id="joinEmail" placeholder="seu@email.com"></div><div class="form-group"><label for="joinPassword">Sua senha</label><input type="password" id="joinPassword" placeholder="Sua senha"></div><div class="form-group"><label for="joinSlug">Codigo do grupo (slug)</label><input type="text" id="joinSlug" placeholder="ex: boleiros-de-cristo"></div><button class="btn-primary" onclick="doJoinGroup()">Entrar</button><p class="login-hint"><a href="#" onclick="showLoginForm(); return false;">Voltar</a></p></div><div id="joinGroupLoading" style="display:none;"><p>Solicitando...</p></div><div id="joinGroupStatus"></div></div></div></div>';
+    if (!ls) return;
+    var email = PENDING_SIGNUP ? PENDING_SIGNUP.email : '';
+    var username = PENDING_SIGNUP ? PENDING_SIGNUP.username : '';
+    ls.innerHTML = '<div class="login-overlay"><div class="login-card"><div class="login-header"><h2>Entrar em Grupo</h2><p>O owner precisa aprovar seu pedido</p></div><div class="login-body"><div id="joinGroupForm"><div class="form-group"><label for="joinUsername">Seu nome de usuario</label><input type="text" id="joinUsername" placeholder="Seu nome" value="' + username + '"></div><div class="form-group"><label for="joinEmail">Seu e-mail</label><input type="email" id="joinEmail" placeholder="seu@email.com" value="' + email + '"></div><div class="form-group"><label for="joinPassword">Sua senha</label><input type="password" id="joinPassword" placeholder="Sua senha"></div><div class="form-group"><label for="joinSlug">Codigo do grupo</label><input type="text" id="joinSlug" placeholder="ex: boleiros-de-cristo" autocomplete="off"></div><button class="btn-primary" onclick="doJoinGroup()">Pedir acesso</button><p class="login-hint"><a href="#" onclick="showGroupChoice(); return false;">Voltar</a></p></div><div id="joinGroupLoading" style="display:none;"><p>Solicitando...</p></div><div id="joinGroupStatus"></div></div></div></div>';
 }
 
 function doLogin() {
@@ -403,37 +585,77 @@ function doLogin() {
     if (loadingEl) loadingEl.style.display = 'block';
     if (statusEl) statusEl.innerHTML = '';
     loginWithEmail(email, password).then(function(result) {
+        if (result.success) return;
         if (loadingEl) loadingEl.style.display = 'none';
         if (formEl) formEl.style.display = 'block';
-        if (statusEl) statusEl.innerHTML = result.success ? '<p class="login-success">' + result.message + '</p>' : '<p class="login-error">Erro: ' + result.error + '</p>';
+        if (result.notFound) {
+            if (statusEl) statusEl.innerHTML = '<p class="login-error">E-mail nao encontrado. Cadastre-se abaixo.</p>';
+            setTimeout(function() { showSignupForm(email); }, 1200);
+        } else if (statusEl) {
+            statusEl.innerHTML = '<p class="login-error">Erro: ' + result.error + '</p>';
+        }
+    });
+}
+
+function doSignup() {
+    var username = document.getElementById('signupUsername').value.trim();
+    var email = document.getElementById('signupEmail').value.trim();
+    var password = document.getElementById('signupPassword').value;
+    if (!username) { alert('Informe seu nome de usuario.'); return; }
+    if (!email || !email.includes('@')) { alert('Informe um e-mail valido.'); return; }
+    if (!password || password.length < 6) { alert('A senha deve ter no minimo 6 caracteres.'); return; }
+    var formEl = document.getElementById('signupForm');
+    var loadingEl = document.getElementById('signupLoading');
+    var statusEl = document.getElementById('signupStatus');
+    if (formEl) formEl.style.display = 'none';
+    if (loadingEl) loadingEl.style.display = 'block';
+    if (statusEl) statusEl.innerHTML = '';
+    signupUser(email, password, username).then(function(result) {
+        if (loadingEl) loadingEl.style.display = 'none';
+        if (!result.success) {
+            if (formEl) formEl.style.display = 'block';
+            if (result.alreadyRegistered) {
+                if (statusEl) statusEl.innerHTML = '<p class="login-error">' + result.error + '</p>';
+                setTimeout(function() { renderLoginScreen(); }, 1500);
+            } else if (statusEl) {
+                statusEl.innerHTML = '<p class="login-error">Erro: ' + result.error + '</p>';
+            }
+            return;
+        }
+        showGroupChoice();
     });
 }
 
 function doCreateGroup() {
+    var nomeGrupo = document.getElementById('groupName').value.trim();
+    var logoUrl = document.getElementById('groupLogo').value.trim() || 'logo-boleiros.png';
     var username = document.getElementById('newUsername').value.trim();
     var email = document.getElementById('newEmail').value.trim();
     var password = document.getElementById('newPassword').value;
-    if (!username) { alert('Informe o nome do grupo.'); return; }
+    if (!nomeGrupo) { alert('Informe o nome do grupo.'); return; }
+    if (!username) { alert('Informe seu nome de usuario.'); return; }
     if (!email || !email.includes('@')) { alert('Informe um e-mail valido.'); return; }
-    if (!password) { alert('Informe uma senha.'); return; }
+    if (!password) { alert('Informe sua senha.'); return; }
     var formEl = document.getElementById('createGroupForm');
     var loadingEl = document.getElementById('createGroupLoading');
     var statusEl = document.getElementById('createGroupStatus');
     if (formEl) formEl.style.display = 'none';
     if (loadingEl) loadingEl.style.display = 'block';
     if (statusEl) statusEl.innerHTML = '';
-    createUserAndGroup(email, password, username).then(function(result) {
+    createUserAndGroup(email, password, username, nomeGrupo, logoUrl).then(function(result) {
         if (loadingEl) loadingEl.style.display = 'none';
         if (formEl) formEl.style.display = 'block';
         if (statusEl) statusEl.innerHTML = result.success ? '<p class="login-success">Grupo criado! Entrando...</p>' : '<p class="login-error">Erro: ' + result.error + '</p>';
-        if (result.success) { setTimeout(function() { initAuth(); }, 2000); }
+        if (result.success) { setTimeout(function() { onAuthStateChanged(AUTH.user); }, 1500); }
     });
 }
 
 function doJoinGroup() {
+    var username = document.getElementById('joinUsername').value.trim();
     var email = document.getElementById('joinEmail').value.trim();
     var password = document.getElementById('joinPassword').value;
-    var slug = document.getElementById('joinSlug').value.trim();
+    var slug = document.getElementById('joinSlug').value.trim().toLowerCase();
+    if (!username) { alert('Informe seu nome de usuario.'); return; }
     if (!email || !email.includes('@')) { alert('Informe um e-mail valido.'); return; }
     if (!password) { alert('Informe sua senha.'); return; }
     if (!slug) { alert('Informe o codigo do grupo.'); return; }
@@ -443,10 +665,11 @@ function doJoinGroup() {
     if (formEl) formEl.style.display = 'none';
     if (loadingEl) loadingEl.style.display = 'block';
     if (statusEl) statusEl.innerHTML = '';
-    joinGroup(email, password, slug).then(function(result) {
+    joinGroup(email, password, username, slug).then(function(result) {
         if (loadingEl) loadingEl.style.display = 'none';
         if (formEl) formEl.style.display = 'block';
-        if (statusEl) statusEl.innerHTML = result.success ? '<p class="login-success">Solicitacao enviada! Aguarde aprovacao do owner.</p>' : '<p class="login-error">Erro: ' + result.error + '</p>';
+        if (statusEl) statusEl.innerHTML = result.success ? '<p class="login-success">Pedido enviado! Aguarde aprovacao do owner.</p>' : '<p class="login-error">Erro: ' + result.error + '</p>';
+        if (result.success) { setTimeout(function() { onAuthStateChanged(AUTH.user); }, 1500); }
     });
 }
 
