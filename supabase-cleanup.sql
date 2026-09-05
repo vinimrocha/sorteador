@@ -16,8 +16,8 @@ DROP POLICY IF EXISTS "Admins atualizam grupos" ON public.grupos;
 DROP POLICY IF EXISTS "Admins deletam grupos" ON public.grupos;
 
 -- Usuarios_grupo
-DROP POLICY IF EXISTS "Membros veem admins do grupo" ON public.usuarios_grupo;
-DROP POLICY IF EXISTS "Admins adicionam admins" ON public.usuarios_grupo;
+DROP POLICY IF EXISTS "Membros veem admins" ON public.usuarios_grupo;
+DROP POLICY IF EXISTS "Admins aprovam pending" ON public.usuarios_grupo;
 DROP POLICY IF EXISTS "Admins removem admins" ON public.usuarios_grupo;
 
 -- Jogadores
@@ -33,6 +33,7 @@ DROP POLICY IF EXISTS "Admins deletam jogadores" ON public.jogadores;
 DROP TRIGGER IF EXISTS trg_link_auth_user ON auth.users;
 DROP TRIGGER IF EXISTS trg_check_limite_usuarios_grupo ON public.usuarios_grupo;
 DROP TRIGGER IF EXISTS trg_check_limite_jogadores ON public.jogadores;
+DROP TRIGGER IF EXISTS trg_owner_auto_approved ON public.usuarios_grupo;
 
 -- ============================================
 -- PASSO 3: REMOVER FUNCOES
@@ -42,6 +43,7 @@ DROP FUNCTION IF EXISTS public.link_user_to_group();
 DROP FUNCTION IF EXISTS public.check_limite_usuarios_grupo();
 DROP FUNCTION IF EXISTS public.check_limite_jogadores();
 DROP FUNCTION IF EXISTS public.is_admin_do_grupo(uuid);
+DROP FUNCTION IF EXISTS public.set_owner_approved();
 
 -- ============================================
 -- PASSO 4: DESABILITAR RLS E REMOVER TABELAS

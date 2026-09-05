@@ -150,12 +150,16 @@ declare v_grupo_id uuid;
 begin
   insert into public.grupos (nome, slug, logo_url) values ('Boleiros de Cristo', 'boleiros-de-cristo', 'logo-boleiros.png') on conflict (slug) do nothing returning id into v_grupo_id;
   if v_grupo_id is null then select id into v_grupo_id from public.grupos where slug = 'boleiros-de-cristo'; end if;
-  insert into public.usuarios_grupo (grupo_id, email, role, status) values (v_grupo_id, 'SEU-EMAIL@EXEMPLO.COM', 'owner', 'approved') on conflict (grupo_id, email) do nothing;
+  -- insert do owner apenas se ainda nao existir (evita disparar trigger de limite no ON CONFLICT)
+  if not exists (select 1 from public.usuarios_grupo where grupo_id = v_grupo_id and email = 'seu-email@exemplo.com') then
+    insert into public.usuarios_grupo (grupo_id, email, role, status) values (v_grupo_id, 'SEU-EMAIL@EXEMPLO.COM', 'owner', 'approved');
+  end if;
 end;
 $$;
 
+-- Seed idempotente: insere apenas jogadores que ainda nao existem (por nome + grupo)
 insert into public.jogadores (grupo_id, nome, categoria, goleiro, menina)
-select id, a.* from (values
+select g.id, a.nome, a.categoria, a.goleiro, a.menina from (values
   ('Adeilson', 4, false, false),
   ('Adriel', 3, false, false),
   ('Adryel', 4, false, false),
@@ -282,6 +286,9 @@ select id, a.* from (values
   ('Yan', 3, false, false),
   ('Yan Goleiro', 3, true, false),
   ('Yuri Felipe', 4, false, false)) as a(nome, categoria, goleiro, menina)
-cross join (select id from public.grupos where slug = 'boleiros-de-cristo') g;
+cross join (select id from public.grupos where slug = 'boleiros-de-cristo') g
+where not exists (
+  select 1 from public.jogadores j where j.grupo_id = g.id and j.nome = a.nome
+);
 
 -- Verificacao: select count(*) from jogadores where grupo_id = (select id from grupos where slug = 'boleiros-de-cristo');
