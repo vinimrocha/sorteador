@@ -34,11 +34,13 @@
 </header>
 <div id="loginSection"></div>
 <div id="adminSection" style="display:none;">
-    <div style="text-align:right; padding:8px 20px;">
+    <div class="admin-bar">
+        <span id="userInfo" class="admin-user"></span>
         <button id="btnLogout" class="btn-secondary btn-compact" onclick="logout()">Sair</button>
     </div>
+    <div id="pendingPanel"></div>
 </div>
-<main class="container">
+<main class="container" id="mainApp">
     <section class="card card-players">
         <div class="card-header-row">
             <h2>Jogadores Presentes</h2>
