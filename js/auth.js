@@ -71,8 +71,12 @@ function signupUser(email, password, username) {
         options: { data: { display_name: username.trim() } }
     }).then(function(result) {
         if (result.error) {
-            if (result.error.message && result.error.message.toLowerCase().indexOf('already registered') >= 0) {
+            var msg = (result.error.message || '').toLowerCase();
+            if (msg.indexOf('already registered') >= 0 || msg.indexOf('already exists') >= 0) {
                 return { success: false, alreadyRegistered: true, error: 'Este e-mail ja tem conta. Faca login.' };
+            }
+            if (msg.indexOf('invalid') >= 0) {
+                return { success: false, error: 'E-mail recusado pelo servidor. Use um e-mail real/valido ou configure o SMTP no Supabase (Auth > Settings).' };
             }
             return { success: false, error: result.error.message };
         }
