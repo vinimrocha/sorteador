@@ -31,6 +31,8 @@ create table if not exists public.jogadores (
   created_at timestamptz default now()
 );
 
+alter table if exists public.usuarios_grupo add column if not exists status text default 'approved';
+
 create index if not exists idx_jogadores_grupo on public.jogadores(grupo_id);
 create index if not exists idx_usuarios_grupo_email on public.usuarios_grupo(lower(email));
 create index if not exists idx_grupos_slug on public.grupos(slug);
