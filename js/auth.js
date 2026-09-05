@@ -474,7 +474,7 @@ function carregarGrupo(slug, personalizar) {
 }
 
 function carregarJogadores(grupoId) {
-    supabaseClient.from('jogadores').select('*').eq('grupo_id', grupoId).eq('ativo', true).order('nome').then(function(result) {
+    supabaseClient.from('jogadores').select('*').eq('grupo_id', grupoId).order('nome').then(function(result) {
         if (result.error) throw result.error;
         jogadores = (result.data || []).map(function(j) { return Object.assign({}, j, { presente: false }); });
         renderLista();
@@ -616,8 +616,7 @@ function removerJogador(index) {
     if (!confirm('Remover "' + j.nome + '" da lista?')) return;
     supabaseClient.from('jogadores').delete().eq('id', j.id).then(function(result) {
         if (result.error) { alert('Erro ao remover: ' + result.error.message); return; }
-        jogadores.splice(index, 1);
-        renderLista();
+        location.reload();
     });
 }
 
