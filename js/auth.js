@@ -310,7 +310,7 @@ function bindEventos() {
 function renderLoginScreen() {
     var ls = document.getElementById('loginSection');
     if (!ls) return;
-    ls.innerHTML = '<div class="login-overlay"><div class="login-card"><div class="login-header"><h2>Boleiros de Cristo</h2><p>Area do organizador</p></div><div class="login-body"><div id="loginForm"><div class="form-group"><label for="loginEmail">Seu e-mail</label><input type="email" id="loginEmail" placeholder="seu@email.com" autocomplete="email"></div><div class="form-group"><label for="loginPassword">Sua senha</label><input type="password" id="loginPassword" placeholder="Sua senha" autocomplete="current-password"></div><button id="btnLogin" class="btn-primary" onclick="doLogin()">Entrar</button><p class="login-hint">Digite email e senha cadastrados.</p></div><div id="loginLoading" style="display:none;"><p>Entrando...</p></div><div id="loginStatus"></div></div></div></div>';
+    ls.innerHTML = '<div class="login-overlay"><div class="login-card"><div class="login-header"><h2>Boleiros de Cristo</h2><p>Área do organizador</p></div><div class="login-body"><div id="loginForm"><div class="form-group"><label for="loginEmail">Seu e-mail</label><input type="email" id="loginEmail" placeholder="seu@email.com" autocomplete="email"></div><div class="form-group"><label for="loginPassword">Sua senha</label><input type="password" id="loginPassword" placeholder="Sua senha" autocomplete="current-password"></div><button id="btnLogin" class="btn-primary" onclick="doLogin()">Entrar</button><p class="login-hint">Digite email e senha cadastrados.</p></div><div id="loginLoading" style="display:none;"><p>Entrando...</p></div><div id="loginStatus"></div></div></div></div>';
     ls.style.display = 'flex';
 }
 
