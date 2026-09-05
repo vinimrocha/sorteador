@@ -71,8 +71,12 @@ function signupUser(email, password, username) {
         options: { data: { display_name: username.trim() } }
     }).then(function(result) {
         if (result.error) {
-            if (result.error.message && result.error.message.toLowerCase().indexOf('already registered') >= 0) {
+            var msg = (result.error.message || '').toLowerCase();
+            if (msg.indexOf('already registered') >= 0 || msg.indexOf('already exists') >= 0) {
                 return { success: false, alreadyRegistered: true, error: 'Este e-mail ja tem conta. Faca login.' };
+            }
+            if (msg.indexOf('invalid') >= 0) {
+                return { success: false, error: 'E-mail recusado pelo servidor. Use um e-mail real/valido ou configure o SMTP no Supabase (Auth > Settings).' };
             }
             return { success: false, error: result.error.message };
         }
@@ -85,6 +89,18 @@ function signupUser(email, password, username) {
             if (PENDING_SIGNUP) PENDING_SIGNUP.userId = AUTH.user.id;
             return { success: true, user: AUTH.user };
         });
+    });
+}
+
+/* Upload da logo para o bucket 'logos' (Supabase Storage) e retorna a URL publica,
+   salva em grupos.logo_url pelo CRUD de criar grupo. */
+function uploadLogo(file) {
+    var ext = ((file.name || '').split('.').pop() || 'png').toLowerCase().substring(0, 4);
+    var path = 'grupos/' + Date.now().toString(36) + '-' + Math.random().toString(36).substring(2, 8) + '.' + ext;
+    return supabaseClient.storage.from('logos').upload(path, file, { upsert: false }).then(function(r) {
+        if (r.error) return { success: false, error: r.error.message };
+        var pub = supabaseClient.storage.from('logos').getPublicUrl(path);
+        return { success: true, url: pub.data.publicUrl };
     });
 }
 
@@ -236,8 +252,10 @@ function loadApp() {
         var mainEl = document.getElementById('mainApp');
         if (approved.length === 0) {
             if (mainEl) mainEl.style.display = 'none';
-            showWaitingScreen(pending);
             renderPendingPanel([]);
+            /* Com grupo pendente: tela de espera. Sem grupo nenhum: opcoes criar/entrar. */
+            if (pending.length > 0) showWaitingScreen(pending);
+            else showGroupChoice();
             return;
         }
         if (mainEl) mainEl.style.display = 'block';
@@ -517,6 +535,7 @@ function loginWithEmail(email, password) {
 
 function logout() {
     PENDING_SIGNUP = null;
+    window.LOGO_FILE = null;
     supabaseClient.auth.signOut().then(function() { AUTH.user = null; AUTH.session = null; onAuthStateChanged(null); }).catch(function(err) { console.error('Erro ao logout:', err); });
 }
 
@@ -539,37 +558,35 @@ function showSignupForm(prefillEmail) {
 
 function showGroupChoice() {
     var ls = document.getElementById('loginSection');
-    if (!ls || !PENDING_SIGNUP) { renderLoginScreen(); return; }
-    ls.innerHTML = '<div class="login-overlay"><div class="login-card"><div class="login-header"><h2>Ola, ' + PENDING_SIGNUP.username + '</h2><p>Conta criada! Escolha uma opcao:</p></div><div class="login-body"><div id="newUserForm"><button class="btn-primary" onclick="showCreateGroup()">Criar grupo</button><button class="btn-secondary" onclick="showJoinGroup()">Entrar em grupo</button><p class="login-hint"><a href="#" onclick="logout(); return false;">Sair</a></p></div></div></div></div>';
+    if (!ls || !AUTH.user) { renderLoginScreen(); return; }
+    var name = PENDING_SIGNUP ? PENDING_SIGNUP.username : displayName();
+    var mainEl = document.getElementById('mainApp');
+    if (mainEl) mainEl.style.display = 'none';
+    ls.innerHTML = '<div class="login-overlay"><div class="login-card"><div class="login-header"><h2>Ola, ' + name + '</h2><p>Voce ainda nao tem grupo. Escolha uma opcao:</p></div><div class="login-body"><div id="newUserForm"><button class="btn-primary" onclick="showCreateGroup()">Criar grupo</button><button class="btn-secondary" onclick="showJoinGroup()">Entrar em grupo</button><p class="login-hint"><a href="#" onclick="logout(); return false;">Sair</a></p></div></div></div></div>';
     ls.style.display = 'flex';
 }
 
 function showCreateGroup() {
     var ls = document.getElementById('loginSection');
     if (!ls) return;
-    var email = PENDING_SIGNUP ? PENDING_SIGNUP.email : '';
-    var username = PENDING_SIGNUP ? PENDING_SIGNUP.username : '';
+    var email = PENDING_SIGNUP ? PENDING_SIGNUP.email : (AUTH.user ? AUTH.user.email : '');
+    var username = PENDING_SIGNUP ? PENDING_SIGNUP.username : (displayName() || '');
     ls.innerHTML = '<div class="login-overlay"><div class="login-card"><div class="login-header"><h2>Criar Grupo</h2><p>Voce sera o owner do grupo</p></div><div class="login-body"><div id="createGroupForm"><div class="form-group"><label for="groupName">Nome do grupo</label><input type="text" id="groupName" placeholder="Ex: Boleiros de Cristo"></div><div class="form-group"><label for="groupLogo">Logo (URL ou arquivo)</label><input type="text" id="groupLogo" placeholder="logo-boleiros.png (opcional)"><input type="file" id="groupLogoFile" accept="image/*" style="margin-top:8px;"><img id="groupLogoPreview" style="display:none;max-width:96px;margin-top:8px;border-radius:8px;"></div><div class="form-group"><label for="newUsername">Seu nome de usuario</label><input type="text" id="newUsername" placeholder="Seu nome" value="' + username + '"></div><div class="form-group"><label for="newEmail">Seu e-mail</label><input type="email" id="newEmail" placeholder="seu@email.com" value="' + email + '"></div><div class="form-group"><label for="newPassword">Senha</label><input type="password" id="newPassword" placeholder="Sua senha"></div><button class="btn-primary" onclick="doCreateGroup()">Criar Grupo</button><p class="login-hint"><a href="#" onclick="showGroupChoice(); return false;">Voltar</a></p></div><div id="createGroupLoading" style="display:none;"><p>Criando...</p></div><div id="createGroupStatus"></div></div></div></div>';
     var fileInput = document.getElementById('groupLogoFile');
     if (fileInput) fileInput.addEventListener('change', function() {
         var f = fileInput.files && fileInput.files[0];
-        if (!f) return;
-        var reader = new FileReader();
-        reader.onload = function(e) {
-            var prev = document.getElementById('groupLogoPreview');
-            if (prev) { prev.src = e.target.result; prev.style.display = 'block'; }
-            var urlInput = document.getElementById('groupLogo');
-            if (urlInput) urlInput.value = e.target.result;
-        };
-        reader.readAsDataURL(f);
+        var prev = document.getElementById('groupLogoPreview');
+        if (!f) { window.LOGO_FILE = null; if (prev) prev.style.display = 'none'; return; }
+        window.LOGO_FILE = f;
+        if (prev) { prev.src = URL.createObjectURL(f); prev.style.display = 'block'; }
     });
 }
 
 function showJoinGroup() {
     var ls = document.getElementById('loginSection');
     if (!ls) return;
-    var email = PENDING_SIGNUP ? PENDING_SIGNUP.email : '';
-    var username = PENDING_SIGNUP ? PENDING_SIGNUP.username : '';
+    var email = PENDING_SIGNUP ? PENDING_SIGNUP.email : (AUTH.user ? AUTH.user.email : '');
+    var username = PENDING_SIGNUP ? PENDING_SIGNUP.username : (displayName() || '');
     ls.innerHTML = '<div class="login-overlay"><div class="login-card"><div class="login-header"><h2>Entrar em Grupo</h2><p>O owner precisa aprovar seu pedido</p></div><div class="login-body"><div id="joinGroupForm"><div class="form-group"><label for="joinUsername">Seu nome de usuario</label><input type="text" id="joinUsername" placeholder="Seu nome" value="' + username + '"></div><div class="form-group"><label for="joinEmail">Seu e-mail</label><input type="email" id="joinEmail" placeholder="seu@email.com" value="' + email + '"></div><div class="form-group"><label for="joinPassword">Sua senha</label><input type="password" id="joinPassword" placeholder="Sua senha"></div><div class="form-group"><label for="joinSlug">Codigo do grupo</label><input type="text" id="joinSlug" placeholder="ex: boleiros-de-cristo" autocomplete="off"></div><button class="btn-primary" onclick="doJoinGroup()">Pedir acesso</button><p class="login-hint"><a href="#" onclick="showGroupChoice(); return false;">Voltar</a></p></div><div id="joinGroupLoading" style="display:none;"><p>Solicitando...</p></div><div id="joinGroupStatus"></div></div></div></div>';
 }
 
@@ -628,7 +645,7 @@ function doSignup() {
 
 function doCreateGroup() {
     var nomeGrupo = document.getElementById('groupName').value.trim();
-    var logoUrl = document.getElementById('groupLogo').value.trim() || 'logo-boleiros.png';
+    var logoTyped = document.getElementById('groupLogo').value.trim();
     var username = document.getElementById('newUsername').value.trim();
     var email = document.getElementById('newEmail').value.trim();
     var password = document.getElementById('newPassword').value;
@@ -642,12 +659,28 @@ function doCreateGroup() {
     if (formEl) formEl.style.display = 'none';
     if (loadingEl) loadingEl.style.display = 'block';
     if (statusEl) statusEl.innerHTML = '';
-    createUserAndGroup(email, password, username, nomeGrupo, logoUrl).then(function(result) {
-        if (loadingEl) loadingEl.style.display = 'none';
-        if (formEl) formEl.style.display = 'block';
-        if (statusEl) statusEl.innerHTML = result.success ? '<p class="login-success">Grupo criado! Entrando...</p>' : '<p class="login-error">Erro: ' + result.error + '</p>';
-        if (result.success) { setTimeout(function() { onAuthStateChanged(AUTH.user); }, 1500); }
-    });
+    var finish = function(finalLogo) {
+        window.LOGO_FILE = null;
+        createUserAndGroup(email, password, username, nomeGrupo, finalLogo).then(function(result) {
+            if (loadingEl) loadingEl.style.display = 'none';
+            if (formEl) formEl.style.display = 'block';
+            if (statusEl) statusEl.innerHTML = result.success ? '<p class="login-success">Grupo criado! Entrando...</p>' : '<p class="login-error">Erro: ' + result.error + '</p>';
+            if (result.success) { setTimeout(function() { onAuthStateChanged(AUTH.user); }, 1500); }
+        });
+    };
+    if (window.LOGO_FILE) {
+        uploadLogo(window.LOGO_FILE).then(function(up) {
+            if (!up.success) {
+                if (loadingEl) loadingEl.style.display = 'none';
+                if (formEl) formEl.style.display = 'block';
+                if (statusEl) statusEl.innerHTML = '<p class="login-error">Erro no upload da logo: ' + up.error + '</p>';
+                return;
+            }
+            finish(up.url);
+        });
+    } else {
+        finish(logoTyped || 'logo-boleiros.png');
+    }
 }
 
 function doJoinGroup() {
