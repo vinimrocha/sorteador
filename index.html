@@ -36,7 +36,10 @@
 <div id="adminSection" style="display:none;">
     <div class="admin-bar">
         <span id="userInfo" class="admin-user"></span>
-        <button id="btnLogout" class="btn-secondary btn-compact" onclick="logout()">Sair</button>
+        <div class="admin-actions">
+            <button id="btnManageGroup" class="btn-secondary btn-compact" onclick="showManageGroup()" style="display:none;">Gerenciar grupo</button>
+            <button id="btnLogout" class="btn-secondary btn-compact" onclick="logout()">Sair</button>
+        </div>
     </div>
     <div id="pendingPanel"></div>
 </div>

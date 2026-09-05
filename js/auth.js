@@ -262,8 +262,22 @@ function displayName() {
     return AUTH.user ? AUTH.user.email : '';
 }
 
+/* Grupos do usuario logado (para checar papel de owner). */
+var MEUS_GRUPOS = [];
+
+function isOwnerOf(grupoId) {
+    return MEUS_GRUPOS.some(function(g) { return g.id === grupoId && g.role === 'owner' && g.status === 'approved'; });
+}
+
+function toggleManageButton() {
+    var btn = document.getElementById('btnManageGroup');
+    if (!btn) return;
+    btn.style.display = (AUTH.user && grupoAtual && isOwnerOf(grupoAtual.id)) ? 'block' : 'none';
+}
+
 function loadApp() {
     getMyGroups().then(function(groups) {
+        MEUS_GRUPOS = groups || [];
         var approved = groups.filter(function(g) { return g.status === 'approved'; });
         var pending = groups.filter(function(g) { return g.status !== 'approved'; });
         renderUserBar();
@@ -326,8 +340,71 @@ function renderPendingPanel(ownerGroups) {
     });
 }
 
-function doApprove(requestId) {
-    approveUser(requestId).then(function(r) {
+/* Gerenciamento do grupo (owner): nome + logo com upload para o Storage. */
+function escAttr(s) { return String(s == null ? '' : s).replace(/&/g, '&amp;').replace(/"/g, '&quot;').replace(/</g, '&lt;'); }
+
+function showManageGroup() {
+    if (!AUTH.user || !grupoAtual || !isOwnerOf(grupoAtual.id)) { alert('Apenas o owner pode gerenciar o grupo.'); return; }
+    var mainEl = document.getElementById('mainApp');
+    if (mainEl) mainEl.style.display = 'none';
+    window.LOGO_FILE = null;
+    var ls = document.getElementById('loginSection');
+    var logo = grupoAtual.logo_url || SYSTEM_LOGO;
+    ls.innerHTML = '<div class="login-page"><div class="login-card"><div class="login-header"><h2>Gerenciar Grupo</h2><p>Nome e logo do grupo</p></div><div class="login-body"><div id="manageGroupForm"><div style="text-align:center;margin-bottom:12px;"><img id="manageLogoPreview" src="' + escAttr(logo) + '" alt="Logo do grupo" style="max-width:120px;border-radius:12px;"></div><div class="form-group"><label for="manageGroupName">Nome do grupo</label><input type="text" id="manageGroupName" value="' + escAttr(grupoAtual.nome) + '"></div><div class="form-group"><label for="manageGroupLogo">Logo (URL ou arquivo)</label><input type="text" id="manageGroupLogo" value="' + escAttr(logo) + '"><input type="file" id="manageGroupLogoFile" accept="image/*" style="margin-top:8px;"></div><button class="btn-primary" onclick="doSaveGroup()">Salvar</button><p class="login-hint"><a href="#" onclick="onAuthStateChanged(AUTH.user); return false;">Voltar</a></p></div><div id="manageGroupLoading" style="display:none;"><p>Salvando...</p></div><div id="manageGroupStatus"></div></div></div></div>';
+    ls.style.display = 'block';
+    var fileInput = document.getElementById('manageGroupLogoFile');
+    if (fileInput) fileInput.addEventListener('change', function() {
+        var f = fileInput.files && fileInput.files[0];
+        if (!f) return;
+        window.LOGO_FILE = f;
+        var prev = document.getElementById('manageLogoPreview');
+        if (prev) prev.src = URL.createObjectURL(f);
+    });
+}
+
+function doSaveGroup() {
+    if (!AUTH.user || !grupoAtual || !isOwnerOf(grupoAtual.id)) { alert('Apenas o owner pode gerenciar o grupo.'); return; }
+    var nome = document.getElementById('manageGroupName').value.trim();
+    var logoTyped = document.getElementById('manageGroupLogo').value.trim();
+    if (!nome) { alert('Informe o nome do grupo.'); return; }
+    var formEl = document.getElementById('manageGroupForm');
+    var loadingEl = document.getElementById('manageGroupLoading');
+    var statusEl = document.getElementById('manageGroupStatus');
+    if (formEl) formEl.style.display = 'none';
+    if (loadingEl) loadingEl.style.display = 'block';
+    if (statusEl) statusEl.innerHTML = '';
+    var finish = function(finalLogo) {
+        window.LOGO_FILE = null;
+        supabaseClient.from('grupos').update({ nome: nome, logo_url: finalLogo }).eq('id', grupoAtual.id).select().then(function(r) {
+            if (loadingEl) loadingEl.style.display = 'none';
+            if (formEl) formEl.style.display = 'block';
+            if (r.error) {
+                if (statusEl) statusEl.innerHTML = '<p class="login-error">Erro: ' + r.error.message + '</p>';
+                return;
+            }
+            grupoAtual.nome = nome;
+            grupoAtual.logo_url = finalLogo;
+            personalizarHeader(grupoAtual);
+            if (statusEl) statusEl.innerHTML = '<p class="login-success">Grupo atualizado!</p>';
+            setTimeout(function() { onAuthStateChanged(AUTH.user); }, 1200);
+        });
+    };
+    if (window.LOGO_FILE) {
+        uploadLogo(window.LOGO_FILE).then(function(up) {
+            if (!up.success) {
+                if (loadingEl) loadingEl.style.display = 'none';
+                if (formEl) formEl.style.display = 'block';
+                if (statusEl) statusEl.innerHTML = '<p class="login-error">Erro no upload da logo: ' + up.error + '</p>';
+                return;
+            }
+            finish(up.url);
+        });
+    } else {
+        finish(logoTyped || SYSTEM_LOGO);
+    }
+}
+
+function doApprove(requestId) {    approveUser(requestId).then(function(r) {
         if (!r.success) { alert('Erro: ' + r.error); return; }
         loadApp();
     });
@@ -361,6 +438,7 @@ function carregarGrupo(slug, personalizar) {
         /* Personaliza header só para admin/owner logado; visitante vê o generico. */
         if (personalizar !== false && AUTH.user) personalizarHeader(grupoAtual);
         else { grupoAtual.nome = 'Sorteador de Times'; grupoAtual.logo_url = grupoAtual.logo_url || SYSTEM_LOGO; }
+        toggleManageButton();
         carregarJogadores(grupoAtual.id);
     }).catch(function(err) { console.error('Erro ao carregar grupo:', err); });
 }
