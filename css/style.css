@@ -926,6 +926,53 @@ flex: 1;
 }
 
 /* =========================
+   TELA DE ACESSO (mobile-first)
+   Logo do sistema + cartao unico, sem listas
+   ========================= */
+
+.login-page {
+    width: 100%;
+    padding: 20px 16px calc(28px + var(--safe-bottom));
+    display: flex;
+    justify-content: center;
+    align-items: flex-start;
+}
+
+.login-page .login-card {
+    padding: 24px 20px;
+    margin-top: 4px;
+}
+
+.login-logo {
+    display: block;
+    width: min(200px, 56vw);
+    height: auto;
+    margin: 0 auto 12px;
+}
+
+.login-page .login-header {
+    margin-bottom: 20px;
+}
+
+.login-page .login-header h2 {
+    font-size: 22px;
+}
+
+.login-page .login-body button {
+    margin-top: 4px;
+}
+
+@media (min-width: 768px) {
+    .login-page {
+        padding-top: 40px;
+    }
+
+    .login-logo {
+        width: 240px;
+    }
+}
+
+/* =========================
    TELA AGUARDANDO APROVACAO
    ========================= */
 
