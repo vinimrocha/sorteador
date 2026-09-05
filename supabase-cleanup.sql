@@ -14,11 +14,17 @@ DROP POLICY IF EXISTS "Grupos visiveis publicamente" ON public.grupos;
 DROP POLICY IF EXISTS "Usuarios autenticados criam grupo" ON public.grupos;
 DROP POLICY IF EXISTS "Admins atualizam grupos" ON public.grupos;
 DROP POLICY IF EXISTS "Admins deletam grupos" ON public.grupos;
+DROP POLICY IF EXISTS "Owner atualiza grupo" ON public.grupos;
+DROP POLICY IF EXISTS "Owner deleta grupo" ON public.grupos;
 
 -- Usuarios_grupo
 DROP POLICY IF EXISTS "Membros veem admins" ON public.usuarios_grupo;
+DROP POLICY IF EXISTS "Usuarios veem proprio vinculo" ON public.usuarios_grupo;
+DROP POLICY IF EXISTS "Usuarios criam proprio vinculo" ON public.usuarios_grupo;
 DROP POLICY IF EXISTS "Admins aprovam pending" ON public.usuarios_grupo;
 DROP POLICY IF EXISTS "Admins removem admins" ON public.usuarios_grupo;
+DROP POLICY IF EXISTS "Owner remove membros" ON public.usuarios_grupo;
+DROP POLICY IF EXISTS "Admins recusam pendentes" ON public.usuarios_grupo;
 
 -- Jogadores
 DROP POLICY IF EXISTS "Jogadores visiveis publicamente" ON public.jogadores;
@@ -43,6 +49,7 @@ DROP FUNCTION IF EXISTS public.link_user_to_group();
 DROP FUNCTION IF EXISTS public.check_limite_usuarios_grupo();
 DROP FUNCTION IF EXISTS public.check_limite_jogadores();
 DROP FUNCTION IF EXISTS public.is_admin_do_grupo(uuid);
+DROP FUNCTION IF EXISTS public.is_owner_do_grupo(uuid);
 DROP FUNCTION IF EXISTS public.set_owner_approved();
 
 -- ============================================

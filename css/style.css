@@ -1051,6 +1051,23 @@ flex: 1;
     margin-top: 8px;
 }
 
+.danger-zone {
+    margin-top: 16px;
+    border: 2px solid #c62828;
+    border-radius: 8px;
+    padding: 16px;
+}
+
+.danger-zone h3 {
+    color: #c62828;
+    margin-bottom: 8px;
+}
+
+.btn-danger {
+    background: #c62828;
+    color: #fff;
+}
+
 /* =========================
    LISTA DE GRUPOS (pedir acesso)
    ========================= */

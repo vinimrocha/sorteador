@@ -294,7 +294,8 @@ function loadApp() {
         hideWaitingScreen();
         renderGroupSelector(approved);
         carregarGrupo(approved[0].slug);
-        renderPendingPanel(approved.filter(function(g) { return g.role === 'owner'; }));
+        /* Owner e admin aprovam/recusam solicitacoes. */
+        renderPendingPanel(approved);
     });
 }
 
@@ -350,9 +351,10 @@ function showManageGroup() {
     window.LOGO_FILE = null;
     var ls = document.getElementById('loginSection');
     var logo = grupoAtual.logo_url || SYSTEM_LOGO;
-    ls.innerHTML = '<div class="login-page"><div class="login-card"><div class="login-header"><h2>Gerenciar Grupo</h2><p>Nome e logo do grupo</p></div><div class="login-body"><div id="manageGroupForm"><div style="text-align:center;margin-bottom:12px;"><img id="manageLogoPreview" src="' + escAttr(logo) + '" alt="Logo do grupo" style="max-width:120px;border-radius:12px;"></div><div class="form-group"><label for="manageGroupName">Nome do grupo</label><input type="text" id="manageGroupName" value="' + escAttr(grupoAtual.nome) + '"></div><div class="form-group"><label for="manageGroupLogo">Nova logo (URL ou arquivo)</label><input type="text" id="manageGroupLogo" value="" placeholder="Cole a URL ou escolha um arquivo"><input type="file" id="manageGroupLogoFile" accept="image/*" style="margin-top:8px;"></div><button class="btn-primary" onclick="doSaveGroup()">Salvar</button><p class="login-hint"><a href="#" onclick="onAuthStateChanged(AUTH.user); return false;">Voltar</a></p></div><div id="manageGroupLoading" style="display:none;"><p>Salvando...</p></div><div id="manageGroupStatus"></div><div class="pending-panel" style="margin-top:16px;"><h3>Solicitações pendentes</h3><div id="managePendingList"><p class="login-hint">Carregando...</p></div></div></div></div></div>';
+    ls.innerHTML = '<div class="login-page"><div class="login-card"><div class="login-header"><h2>Gerenciar Grupo</h2><p>Nome e logo do grupo</p></div><div class="login-body"><div id="manageGroupForm"><div style="text-align:center;margin-bottom:12px;"><img id="manageLogoPreview" src="' + escAttr(logo) + '" alt="Logo do grupo" style="max-width:120px;border-radius:12px;"></div><div class="form-group"><label for="manageGroupName">Nome do grupo</label><input type="text" id="manageGroupName" value="' + escAttr(grupoAtual.nome) + '"></div><div class="form-group"><label for="manageGroupLogo">Nova logo (URL ou arquivo)</label><input type="text" id="manageGroupLogo" value="" placeholder="Cole a URL ou escolha um arquivo"><input type="file" id="manageGroupLogoFile" accept="image/*" style="margin-top:8px;"></div><button class="btn-primary" onclick="doSaveGroup()">Salvar</button><p class="login-hint"><a href="#" onclick="onAuthStateChanged(AUTH.user); return false;">Voltar</a></p></div><div id="manageGroupLoading" style="display:none;"><p>Salvando...</p></div><div id="manageGroupStatus"></div><div class="pending-panel" style="margin-top:16px;"><h3>Solicitações pendentes</h3><div id="managePendingList"><p class="login-hint">Carregando...</p></div></div><div class="pending-panel" style="margin-top:16px;"><h3>Administradores</h3><div id="manageMembersList"><p class="login-hint">Carregando...</p></div></div><div class="danger-zone"><h3>Zona de perigo</h3><p class="login-hint">Exclui o grupo, os jogadores e os acessos. Não pode ser desfeita.</p><button class="btn-danger" onclick="doDeleteGroup()">Excluir grupo e jogadores</button></div></div></div></div>';
     ls.style.display = 'block';
     carregarPendentesManage();
+    carregarMembrosManage();
     var fileInput = document.getElementById('manageGroupLogoFile');
     if (fileInput) fileInput.addEventListener('change', function() {
         var f = fileInput.files && fileInput.files[0];
@@ -431,6 +433,47 @@ function doRejectManage(requestId) {
     rejectUser(requestId).then(function(r) {
         if (!r.success) { alert('Erro: ' + r.error); return; }
         carregarPendentesManage();
+    });
+}
+
+/* Membros do grupo (owner): lista admins e remove acesso. */
+function getGroupMembers(groupId) {
+    return supabaseClient.from('usuarios_grupo').select('id, email, role, status').eq('grupo_id', groupId).eq('status', 'approved').order('role').then(function(r) {
+        if (r.error) return [];
+        return r.data || [];
+    }).catch(function() { return []; });
+}
+
+function carregarMembrosManage() {
+    var box = document.getElementById('manageMembersList');
+    if (!box || !grupoAtual) return;
+    box.innerHTML = '<p class="login-hint">Carregando...</p>';
+    getGroupMembers(grupoAtual.id).then(function(members) {
+        if (!members.length) { box.innerHTML = '<p class="login-hint">Nenhum membro.</p>'; return; }
+        box.innerHTML = members.map(function(m) {
+            var tag = m.role === 'owner' ? '<span class="admin-badge">owner</span>' : '<span class="admin-badge">admin</span>';
+            var btn = m.role === 'owner' ? '' : ' <button class="btn-secondary btn-compact" onclick="doRemoveAdmin(\'' + m.id + '\', \'' + escAttr(m.email) + '\')">Remover</button>';
+            return '<div class="pending-item"><span class="pending-email">' + escAttr(m.email) + ' ' + tag + '</span><span class="pending-actions">' + btn + '</span></div>';
+        }).join('');
+    });
+}
+
+function doRemoveAdmin(membershipId, email) {
+    if (!confirm('Remover "' + email + '" do grupo?')) return;
+    supabaseClient.from('usuarios_grupo').delete().eq('id', membershipId).then(function(r) {
+        if (r.error) { alert('Erro: ' + r.error.message); return; }
+        carregarMembrosManage();
+    });
+}
+
+/* Owner: exclui grupo + jogadores + acessos (cascade) e recarrega. */
+function doDeleteGroup() {
+    if (!AUTH.user || !grupoAtual || !isOwnerOf(grupoAtual.id)) { alert('Apenas o owner pode excluir o grupo.'); return; }
+    if (!confirm('Excluir o grupo "' + grupoAtual.nome + '" e TODOS os jogadores?')) return;
+    if (!confirm('Confirme novamente: exclusão definitiva.')) return;
+    supabaseClient.from('grupos').delete().eq('id', grupoAtual.id).then(function(r) {
+        if (r.error) { alert('Erro: ' + r.error.message); return; }
+        location.reload();
     });
 }
 

@@ -109,6 +109,20 @@ begin
 end;
 $$ language plpgsql security definer;
 
+-- Owner: papel full (renomear grupo, remover membros, excluir grupo)
+create or replace function public.is_owner_do_grupo(grupo_uuid uuid)
+returns boolean as $$
+begin
+  return exists (
+    select 1 from public.usuarios_grupo
+    where grupo_id = grupo_uuid
+      and user_id = auth.uid()
+      and role = 'owner'
+      and status = 'approved'
+  );
+end;
+$$ language plpgsql security definer;
+
 create or replace function public.set_owner_approved()
 returns trigger as $$
 begin
@@ -127,21 +141,26 @@ drop policy if exists "Grupos visiveis publicamente" on public.grupos;
 drop policy if exists "Usuarios autenticados criam grupo" on public.grupos;
 drop policy if exists "Admins atualizam grupos" on public.grupos;
 drop policy if exists "Admins deletam grupos" on public.grupos;
+drop policy if exists "Owner atualiza grupo" on public.grupos;
+drop policy if exists "Owner deleta grupo" on public.grupos;
 create policy "Grupos visiveis publicamente" on public.grupos for select using (true);
 create policy "Usuarios autenticados criam grupo" on public.grupos for insert to authenticated with check (true);
-create policy "Admins atualizam grupos" on public.grupos for update to authenticated using (public.is_admin_do_grupo(id));
-create policy "Admins deletam grupos" on public.grupos for delete to authenticated using (public.is_admin_do_grupo(id));
+create policy "Owner atualiza grupo" on public.grupos for update to authenticated using (public.is_owner_do_grupo(id)) with check (public.is_owner_do_grupo(id));
+create policy "Owner deleta grupo" on public.grupos for delete to authenticated using (public.is_owner_do_grupo(id));
 
 drop policy if exists "Membros veem admins" on public.usuarios_grupo;
 drop policy if exists "Usuarios veem proprio vinculo" on public.usuarios_grupo;
 drop policy if exists "Usuarios criam proprio vinculo" on public.usuarios_grupo;
 drop policy if exists "Admins aprovam pending" on public.usuarios_grupo;
 drop policy if exists "Admins removem admins" on public.usuarios_grupo;
+drop policy if exists "Owner remove membros" on public.usuarios_grupo;
+drop policy if exists "Admins recusam pendentes" on public.usuarios_grupo;
 create policy "Membros veem admins" on public.usuarios_grupo for select to authenticated using (public.is_admin_do_grupo(grupo_id));
 create policy "Usuarios veem proprio vinculo" on public.usuarios_grupo for select to authenticated using (user_id = auth.uid());
 create policy "Usuarios criam proprio vinculo" on public.usuarios_grupo for insert to authenticated with check (user_id = auth.uid());
 create policy "Admins aprovam pending" on public.usuarios_grupo for update to authenticated using (public.is_admin_do_grupo(grupo_id)) with check (public.is_admin_do_grupo(grupo_id));
-create policy "Admins removem admins" on public.usuarios_grupo for delete to authenticated using (public.is_admin_do_grupo(grupo_id));
+create policy "Owner remove membros" on public.usuarios_grupo for delete to authenticated using (public.is_owner_do_grupo(grupo_id));
+create policy "Admins recusam pendentes" on public.usuarios_grupo for delete to authenticated using (public.is_admin_do_grupo(grupo_id) and status = 'pending');
 
 drop policy if exists "Jogadores visiveis publicamente" on public.jogadores;
 drop policy if exists "Admins inserem jogadores" on public.jogadores;
