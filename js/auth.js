@@ -42,14 +42,14 @@ function initAuth() {
     }
 }
 
-function loginWithMagicLink(email) {
+function loginWithEmail(email, password) {
     AUTH.loading = true;
-    return supabaseClient.auth.signInWithOtp({
+    return supabaseClient.auth.signInWithPassword({
         email: email.trim(),
-        options: { emailRedirectTo: window.location.origin + window.location.pathname }
+        password: password
     }).then(function(result) {
         if (result.error) return { success: false, error: result.error.message };
-        return { success: true, message: 'Link de verificacao enviado para ' + email };
+        return { success: true, message: 'Logado com sucesso!' };
     }).finally(function() { AUTH.loading = false; });
 }
 
@@ -306,20 +306,22 @@ function bindEventos() {
 function renderLoginScreen() {
     var ls = document.getElementById('loginSection');
     if (!ls) return;
-    ls.innerHTML = '<div class="login-overlay"><div class="login-card"><div class="login-header"><h2>Boleiros de Cristo</h2><p>Area do organizador</p></div><div class="login-body"><div id="loginForm"><div class="form-group"><label for="loginEmail">Seu e-mail</label><input type="email" id="loginEmail" placeholder="seu@email.com" autocomplete="email"></div><button id="btnLogin" class="btn-primary" onclick="doLogin()">Enviar Link de Acesso</button><p class="login-hint">Enviamos um link para seu e-mail.</p></div><div id="loginLoading" style="display:none;"><p>Enviando link...</p></div><div id="loginStatus"></div></div></div></div>';
+    ls.innerHTML = '<div class="login-overlay"><div class="login-card"><div class="login-header"><h2>Boleiros de Cristo</h2><p>Area do organizador</p></div><div class="login-body"><div id="loginForm"><div class="form-group"><label for="loginEmail">Seu e-mail</label><input type="email" id="loginEmail" placeholder="seu@email.com" autocomplete="email"></div><div class="form-group"><label for="loginPassword">Sua senha</label><input type="password" id="loginPassword" placeholder="Sua senha" autocomplete="current-password"></div><button id="btnLogin" class="btn-primary" onclick="doLogin()">Entrar</button><p class="login-hint">Digite email e senha cadastrados.</p></div><div id="loginLoading" style="display:none;"><p>Entrando...</p></div><div id="loginStatus"></div></div></div></div>';
     ls.style.display = 'flex';
 }
 
 function doLogin() {
     var email = document.getElementById('loginEmail').value.trim();
+    var password = document.getElementById('loginPassword').value;
     if (!email || !email.includes('@')) { alert('Informe um e-mail valido.'); return; }
+    if (!password) { alert('Informe sua senha.'); return; }
     var formEl = document.getElementById('loginForm');
     var loadingEl = document.getElementById('loginLoading');
     var statusEl = document.getElementById('loginStatus');
     if (formEl) formEl.style.display = 'none';
     if (loadingEl) loadingEl.style.display = 'block';
     if (statusEl) statusEl.innerHTML = '';
-    loginWithMagicLink(email).then(function(result) {
+    loginWithEmail(email, password).then(function(result) {
         if (loadingEl) loadingEl.style.display = 'none';
         if (formEl) formEl.style.display = 'block';
         if (statusEl) statusEl.innerHTML = result.success ? '<p class="login-success">' + result.message + '</p>' : '<p class="login-error">Erro: ' + result.error + '</p>';
