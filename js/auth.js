@@ -350,7 +350,7 @@ function showManageGroup() {
     window.LOGO_FILE = null;
     var ls = document.getElementById('loginSection');
     var logo = grupoAtual.logo_url || SYSTEM_LOGO;
-    ls.innerHTML = '<div class="login-page"><div class="login-card"><div class="login-header"><h2>Gerenciar Grupo</h2><p>Nome e logo do grupo</p></div><div class="login-body"><div id="manageGroupForm"><div style="text-align:center;margin-bottom:12px;"><img id="manageLogoPreview" src="' + escAttr(logo) + '" alt="Logo do grupo" style="max-width:120px;border-radius:12px;"></div><div class="form-group"><label for="manageGroupName">Nome do grupo</label><input type="text" id="manageGroupName" value="' + escAttr(grupoAtual.nome) + '"></div><div class="form-group"><label for="manageGroupLogo">Logo (URL ou arquivo)</label><input type="text" id="manageGroupLogo" value="' + escAttr(logo) + '"><input type="file" id="manageGroupLogoFile" accept="image/*" style="margin-top:8px;"></div><button class="btn-primary" onclick="doSaveGroup()">Salvar</button><p class="login-hint"><a href="#" onclick="onAuthStateChanged(AUTH.user); return false;">Voltar</a></p></div><div id="manageGroupLoading" style="display:none;"><p>Salvando...</p></div><div id="manageGroupStatus"></div></div></div></div>';
+    ls.innerHTML = '<div class="login-page"><div class="login-card"><div class="login-header"><h2>Gerenciar Grupo</h2><p>Nome e logo do grupo</p></div><div class="login-body"><div id="manageGroupForm"><div style="text-align:center;margin-bottom:12px;"><img id="manageLogoPreview" src="' + escAttr(logo) + '" alt="Logo do grupo" style="max-width:120px;border-radius:12px;"></div><div class="form-group"><label for="manageGroupName">Nome do grupo</label><input type="text" id="manageGroupName" value="' + escAttr(grupoAtual.nome) + '"></div><div class="form-group"><label for="manageGroupLogo">Nova logo (URL ou arquivo)</label><input type="text" id="manageGroupLogo" value="" placeholder="Cole a URL ou escolha um arquivo"><input type="file" id="manageGroupLogoFile" accept="image/*" style="margin-top:8px;"></div><button class="btn-primary" onclick="doSaveGroup()">Salvar</button><p class="login-hint"><a href="#" onclick="onAuthStateChanged(AUTH.user); return false;">Voltar</a></p></div><div id="manageGroupLoading" style="display:none;"><p>Salvando...</p></div><div id="manageGroupStatus"></div></div></div></div>';
     ls.style.display = 'block';
     var fileInput = document.getElementById('manageGroupLogoFile');
     if (fileInput) fileInput.addEventListener('change', function() {
@@ -400,7 +400,8 @@ function doSaveGroup() {
             finish(up.url);
         });
     } else {
-        finish(logoTyped || SYSTEM_LOGO);
+        /* Campo vazio e sem arquivo: mantem a logo atual. */
+        finish(logoTyped || grupoAtual.logo_url || SYSTEM_LOGO);
     }
 }
 
