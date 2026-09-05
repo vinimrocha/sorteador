@@ -151,10 +151,21 @@ create policy "Admins inserem jogadores" on public.jogadores for insert to authe
 create policy "Admins atualizam jogadores" on public.jogadores for update to authenticated using (public.is_admin_do_grupo(grupo_id));
 create policy "Admins deletam jogadores" on public.jogadores for delete to authenticated using (public.is_admin_do_grupo(grupo_id));
 
+-- Bucket publico para logos dos grupos (upload via CRUD de criar grupo)
+insert into storage.buckets (id, name, public) values ('logos', 'logos', true) on conflict (id) do nothing;
+drop policy if exists "Logos visiveis publicamente" on storage.objects;
+drop policy if exists "Autenticados enviam logos" on storage.objects;
+drop policy if exists "Autenticados atualizam logos" on storage.objects;
+drop policy if exists "Autenticados removem logos" on storage.objects;
+create policy "Logos visiveis publicamente" on storage.objects for select using (bucket_id = 'logos');
+create policy "Autenticados enviam logos" on storage.objects for insert to authenticated with check (bucket_id = 'logos');
+create policy "Autenticados atualizam logos" on storage.objects for update to authenticated using (bucket_id = 'logos') with check (bucket_id = 'logos');
+create policy "Autenticados removem logos" on storage.objects for delete to authenticated using (bucket_id = 'logos');
+
 do $$
 declare v_grupo_id uuid;
 begin
-  insert into public.grupos (nome, slug, logo_url) values ('Boleiros de Cristo', 'boleiros-de-cristo', 'logo-boleiros.png') on conflict (slug) do nothing returning id into v_grupo_id;
+  insert into public.grupos (nome, slug, logo_url) values ('Boleiros de Cristo', 'boleiros-de-cristo', 'https://maqdmlsouqmadoaayrcv.supabase.co/storage/v1/object/public/logos/boleiros-de-cristo/logo-boleiros.png') on conflict (slug) do nothing returning id into v_grupo_id;
   if v_grupo_id is null then select id into v_grupo_id from public.grupos where slug = 'boleiros-de-cristo'; end if;
   -- insert do owner apenas se ainda nao existir (evita disparar trigger de limite no ON CONFLICT)
   if not exists (select 1 from public.usuarios_grupo where grupo_id = v_grupo_id and email = 'seu-email@exemplo.com') then

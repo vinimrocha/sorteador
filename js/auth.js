@@ -88,6 +88,18 @@ function signupUser(email, password, username) {
     });
 }
 
+/* Upload da logo para o bucket 'logos' (Supabase Storage) e retorna a URL publica,
+   salva em grupos.logo_url pelo CRUD de criar grupo. */
+function uploadLogo(file) {
+    var ext = ((file.name || '').split('.').pop() || 'png').toLowerCase().substring(0, 4);
+    var path = 'grupos/' + Date.now().toString(36) + '-' + Math.random().toString(36).substring(2, 8) + '.' + ext;
+    return supabaseClient.storage.from('logos').upload(path, file, { upsert: false }).then(function(r) {
+        if (r.error) return { success: false, error: r.error.message };
+        var pub = supabaseClient.storage.from('logos').getPublicUrl(path);
+        return { success: true, url: pub.data.publicUrl };
+    });
+}
+
 /* Cria grupo (nome + logo) e vincula o usuario como owner (aprovado). */
 function createUserAndGroup(email, password, username, nomeGrupo, logoUrl) {
     var ctx = null;
@@ -517,6 +529,7 @@ function loginWithEmail(email, password) {
 
 function logout() {
     PENDING_SIGNUP = null;
+    window.LOGO_FILE = null;
     supabaseClient.auth.signOut().then(function() { AUTH.user = null; AUTH.session = null; onAuthStateChanged(null); }).catch(function(err) { console.error('Erro ao logout:', err); });
 }
 
@@ -553,15 +566,10 @@ function showCreateGroup() {
     var fileInput = document.getElementById('groupLogoFile');
     if (fileInput) fileInput.addEventListener('change', function() {
         var f = fileInput.files && fileInput.files[0];
-        if (!f) return;
-        var reader = new FileReader();
-        reader.onload = function(e) {
-            var prev = document.getElementById('groupLogoPreview');
-            if (prev) { prev.src = e.target.result; prev.style.display = 'block'; }
-            var urlInput = document.getElementById('groupLogo');
-            if (urlInput) urlInput.value = e.target.result;
-        };
-        reader.readAsDataURL(f);
+        var prev = document.getElementById('groupLogoPreview');
+        if (!f) { window.LOGO_FILE = null; if (prev) prev.style.display = 'none'; return; }
+        window.LOGO_FILE = f;
+        if (prev) { prev.src = URL.createObjectURL(f); prev.style.display = 'block'; }
     });
 }
 
@@ -628,7 +636,7 @@ function doSignup() {
 
 function doCreateGroup() {
     var nomeGrupo = document.getElementById('groupName').value.trim();
-    var logoUrl = document.getElementById('groupLogo').value.trim() || 'logo-boleiros.png';
+    var logoTyped = document.getElementById('groupLogo').value.trim();
     var username = document.getElementById('newUsername').value.trim();
     var email = document.getElementById('newEmail').value.trim();
     var password = document.getElementById('newPassword').value;
@@ -642,12 +650,28 @@ function doCreateGroup() {
     if (formEl) formEl.style.display = 'none';
     if (loadingEl) loadingEl.style.display = 'block';
     if (statusEl) statusEl.innerHTML = '';
-    createUserAndGroup(email, password, username, nomeGrupo, logoUrl).then(function(result) {
-        if (loadingEl) loadingEl.style.display = 'none';
-        if (formEl) formEl.style.display = 'block';
-        if (statusEl) statusEl.innerHTML = result.success ? '<p class="login-success">Grupo criado! Entrando...</p>' : '<p class="login-error">Erro: ' + result.error + '</p>';
-        if (result.success) { setTimeout(function() { onAuthStateChanged(AUTH.user); }, 1500); }
-    });
+    var finish = function(finalLogo) {
+        window.LOGO_FILE = null;
+        createUserAndGroup(email, password, username, nomeGrupo, finalLogo).then(function(result) {
+            if (loadingEl) loadingEl.style.display = 'none';
+            if (formEl) formEl.style.display = 'block';
+            if (statusEl) statusEl.innerHTML = result.success ? '<p class="login-success">Grupo criado! Entrando...</p>' : '<p class="login-error">Erro: ' + result.error + '</p>';
+            if (result.success) { setTimeout(function() { onAuthStateChanged(AUTH.user); }, 1500); }
+        });
+    };
+    if (window.LOGO_FILE) {
+        uploadLogo(window.LOGO_FILE).then(function(up) {
+            if (!up.success) {
+                if (loadingEl) loadingEl.style.display = 'none';
+                if (formEl) formEl.style.display = 'block';
+                if (statusEl) statusEl.innerHTML = '<p class="login-error">Erro no upload da logo: ' + up.error + '</p>';
+                return;
+            }
+            finish(up.url);
+        });
+    } else {
+        finish(logoTyped || 'logo-boleiros.png');
+    }
 }
 
 function doJoinGroup() {
