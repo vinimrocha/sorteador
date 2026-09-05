@@ -252,8 +252,10 @@ function loadApp() {
         var mainEl = document.getElementById('mainApp');
         if (approved.length === 0) {
             if (mainEl) mainEl.style.display = 'none';
-            showWaitingScreen(pending);
             renderPendingPanel([]);
+            /* Com grupo pendente: tela de espera. Sem grupo nenhum: opcoes criar/entrar. */
+            if (pending.length > 0) showWaitingScreen(pending);
+            else showGroupChoice();
             return;
         }
         if (mainEl) mainEl.style.display = 'block';
@@ -556,16 +558,19 @@ function showSignupForm(prefillEmail) {
 
 function showGroupChoice() {
     var ls = document.getElementById('loginSection');
-    if (!ls || !PENDING_SIGNUP) { renderLoginScreen(); return; }
-    ls.innerHTML = '<div class="login-overlay"><div class="login-card"><div class="login-header"><h2>Ola, ' + PENDING_SIGNUP.username + '</h2><p>Conta criada! Escolha uma opcao:</p></div><div class="login-body"><div id="newUserForm"><button class="btn-primary" onclick="showCreateGroup()">Criar grupo</button><button class="btn-secondary" onclick="showJoinGroup()">Entrar em grupo</button><p class="login-hint"><a href="#" onclick="logout(); return false;">Sair</a></p></div></div></div></div>';
+    if (!ls || !AUTH.user) { renderLoginScreen(); return; }
+    var name = PENDING_SIGNUP ? PENDING_SIGNUP.username : displayName();
+    var mainEl = document.getElementById('mainApp');
+    if (mainEl) mainEl.style.display = 'none';
+    ls.innerHTML = '<div class="login-overlay"><div class="login-card"><div class="login-header"><h2>Ola, ' + name + '</h2><p>Voce ainda nao tem grupo. Escolha uma opcao:</p></div><div class="login-body"><div id="newUserForm"><button class="btn-primary" onclick="showCreateGroup()">Criar grupo</button><button class="btn-secondary" onclick="showJoinGroup()">Entrar em grupo</button><p class="login-hint"><a href="#" onclick="logout(); return false;">Sair</a></p></div></div></div></div>';
     ls.style.display = 'flex';
 }
 
 function showCreateGroup() {
     var ls = document.getElementById('loginSection');
     if (!ls) return;
-    var email = PENDING_SIGNUP ? PENDING_SIGNUP.email : '';
-    var username = PENDING_SIGNUP ? PENDING_SIGNUP.username : '';
+    var email = PENDING_SIGNUP ? PENDING_SIGNUP.email : (AUTH.user ? AUTH.user.email : '');
+    var username = PENDING_SIGNUP ? PENDING_SIGNUP.username : (displayName() || '');
     ls.innerHTML = '<div class="login-overlay"><div class="login-card"><div class="login-header"><h2>Criar Grupo</h2><p>Voce sera o owner do grupo</p></div><div class="login-body"><div id="createGroupForm"><div class="form-group"><label for="groupName">Nome do grupo</label><input type="text" id="groupName" placeholder="Ex: Boleiros de Cristo"></div><div class="form-group"><label for="groupLogo">Logo (URL ou arquivo)</label><input type="text" id="groupLogo" placeholder="logo-boleiros.png (opcional)"><input type="file" id="groupLogoFile" accept="image/*" style="margin-top:8px;"><img id="groupLogoPreview" style="display:none;max-width:96px;margin-top:8px;border-radius:8px;"></div><div class="form-group"><label for="newUsername">Seu nome de usuario</label><input type="text" id="newUsername" placeholder="Seu nome" value="' + username + '"></div><div class="form-group"><label for="newEmail">Seu e-mail</label><input type="email" id="newEmail" placeholder="seu@email.com" value="' + email + '"></div><div class="form-group"><label for="newPassword">Senha</label><input type="password" id="newPassword" placeholder="Sua senha"></div><button class="btn-primary" onclick="doCreateGroup()">Criar Grupo</button><p class="login-hint"><a href="#" onclick="showGroupChoice(); return false;">Voltar</a></p></div><div id="createGroupLoading" style="display:none;"><p>Criando...</p></div><div id="createGroupStatus"></div></div></div></div>';
     var fileInput = document.getElementById('groupLogoFile');
     if (fileInput) fileInput.addEventListener('change', function() {
@@ -580,8 +585,8 @@ function showCreateGroup() {
 function showJoinGroup() {
     var ls = document.getElementById('loginSection');
     if (!ls) return;
-    var email = PENDING_SIGNUP ? PENDING_SIGNUP.email : '';
-    var username = PENDING_SIGNUP ? PENDING_SIGNUP.username : '';
+    var email = PENDING_SIGNUP ? PENDING_SIGNUP.email : (AUTH.user ? AUTH.user.email : '');
+    var username = PENDING_SIGNUP ? PENDING_SIGNUP.username : (displayName() || '');
     ls.innerHTML = '<div class="login-overlay"><div class="login-card"><div class="login-header"><h2>Entrar em Grupo</h2><p>O owner precisa aprovar seu pedido</p></div><div class="login-body"><div id="joinGroupForm"><div class="form-group"><label for="joinUsername">Seu nome de usuario</label><input type="text" id="joinUsername" placeholder="Seu nome" value="' + username + '"></div><div class="form-group"><label for="joinEmail">Seu e-mail</label><input type="email" id="joinEmail" placeholder="seu@email.com" value="' + email + '"></div><div class="form-group"><label for="joinPassword">Sua senha</label><input type="password" id="joinPassword" placeholder="Sua senha"></div><div class="form-group"><label for="joinSlug">Codigo do grupo</label><input type="text" id="joinSlug" placeholder="ex: boleiros-de-cristo" autocomplete="off"></div><button class="btn-primary" onclick="doJoinGroup()">Pedir acesso</button><p class="login-hint"><a href="#" onclick="showGroupChoice(); return false;">Voltar</a></p></div><div id="joinGroupLoading" style="display:none;"><p>Solicitando...</p></div><div id="joinGroupStatus"></div></div></div></div>';
 }
 
