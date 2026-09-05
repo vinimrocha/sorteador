@@ -81,6 +81,9 @@ function carregarMeusGrupos() {
         if (result.error) { console.error('Erro ao carregar grupos:', result.error); return; }
         var groups = result.data || [];
         renderGroupSelector(groups);
+        if (groups.length === 1) {
+            carregarGrupo(groups[0].grupos.slug);
+        }
     }).catch(function(err) { console.error('Erro ao carregar grupos:', err); });
 }
 
