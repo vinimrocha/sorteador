@@ -223,22 +223,19 @@ function rejectUser(requestId) {
 
 function onAuthStateChanged(user) {
     var adminSection = document.getElementById('adminSection');
-    var btnLogin = document.getElementById('btnHeaderLogin');
     if (user) {
         hideWaitingScreen();
-        if (btnLogin) btnLogin.style.display = 'none';
         if (adminSection) adminSection.style.display = 'block';
         loadApp();
     } else {
-        if (adminSection) adminSection.style.display = 'none';
         var panel = document.getElementById('pendingPanel');
         if (panel) panel.innerHTML = '';
-        renderPublicHome();
+        renderLoginScreen();
     }
 }
 
-/* Tela inicial generica: SORTEADOR DE TIMES, sem identidade de grupo e sem login obrigatorio. */
-var PUBLIC_SLUG = 'boleiros-de-cristo';
+/* Tela inicial: so login, sem listas nem dados de grupos. */
+var SYSTEM_LOGO = 'sorteador-logo.png';
 
 function resetHeaderGenerico() {
     var nomeEl = document.getElementById('nomeGrupo');
@@ -246,7 +243,7 @@ function resetHeaderGenerico() {
     var logoEl = document.getElementById('logoGrupo');
     if (nomeEl) nomeEl.textContent = 'Sorteador de Times';
     if (subEl) subEl.textContent = 'Sorteie os times da sua pelada';
-    if (logoEl) logoEl.src = 'logo-boleiros.png';
+    if (logoEl) logoEl.src = SYSTEM_LOGO;
     document.title = 'Sorteador de Times';
 }
 
@@ -258,22 +255,6 @@ function personalizarHeader(grupo) {
     if (subEl) subEl.textContent = 'Sorteador Oficial de Times';
     if (logoEl && grupo.logo_url) logoEl.src = grupo.logo_url;
     document.title = grupo.nome + ' - Sorteador de Times';
-}
-
-function renderPublicHome() {
-    hideWaitingScreen();
-    var mainEl = document.getElementById('mainApp');
-    var btnLogin = document.getElementById('btnHeaderLogin');
-    if (mainEl) mainEl.style.display = 'block';
-    if (btnLogin) btnLogin.style.display = 'block';
-    resetHeaderGenerico();
-    var container = document.getElementById('groupSelector');
-    if (container) container.innerHTML = '';
-    carregarGrupo(PUBLIC_SLUG, false);
-}
-
-function openLogin() {
-    renderLoginScreen();
 }
 
 function displayName() {
@@ -310,8 +291,8 @@ function showWaitingScreen(pending) {
     var lista = pending.length
         ? pending.map(function(g) { return '<li>' + g.nome + ' (' + g.slug + ') — aguardando aprovacao do owner</li>'; }).join('')
         : '<li>Seu pedido foi registrado. Aguarde aprovacao do owner.</li>';
-    ls.innerHTML = '<div class="login-overlay"><div class="login-card"><div class="login-header"><h2>Ola, ' + nome + '</h2><p>Seu acesso esta pendente</p></div><div class="login-body"><ul class="waiting-list">' + lista + '</ul><button class="btn-secondary" onclick="logout()">Sair</button></div></div></div>';
-    ls.style.display = 'flex';
+    ls.innerHTML = '<div class="login-page"><div class="login-card"><img src="sorteador-logo.png" alt="Sorteador de Times" class="login-logo"><div class="login-header"><h2>Ola, ' + nome + '</h2><p>Seu acesso esta pendente</p></div><div class="login-body"><ul class="waiting-list">' + lista + '</ul><button class="btn-secondary" onclick="logout()">Sair</button></div></div></div>';
+    ls.style.display = 'block';
 }
 
 function hideWaitingScreen() {
@@ -379,7 +360,7 @@ function carregarGrupo(slug, personalizar) {
         grupoAtual = result.data;
         /* Personaliza header só para admin/owner logado; visitante vê o generico. */
         if (personalizar !== false && AUTH.user) personalizarHeader(grupoAtual);
-        else { grupoAtual.nome = 'Sorteador de Times'; grupoAtual.logo_url = grupoAtual.logo_url || 'logo-boleiros.png'; }
+        else { grupoAtual.nome = 'Sorteador de Times'; grupoAtual.logo_url = grupoAtual.logo_url || SYSTEM_LOGO; }
         carregarJogadores(grupoAtual.id);
     }).catch(function(err) { console.error('Erro ao carregar grupo:', err); });
 }
@@ -466,7 +447,7 @@ function renderResultado(times) {
     imagemContainer.id = 'imagemResultado';
     var header = document.createElement('div');
     header.className = 'resultado-header';
-    header.innerHTML = '<img src="' + (grupoAtual.logo_url || 'logo-boleiros.png') + '" alt="' + grupoAtual.nome + '" class="resultado-logo" width="56" height="56"><div class="resultado-header-text"><h1>' + grupoAtual.nome + '</h1></div>';
+    header.innerHTML = '<img src="' + (grupoAtual.logo_url || SYSTEM_LOGO) + '" alt="' + grupoAtual.nome + '" class="resultado-logo" width="56" height="56"><div class="resultado-header-text"><h1>' + grupoAtual.nome + '</h1></div>';
     imagemContainer.appendChild(header);
     var grid = document.createElement('div');
     grid.className = 'times-grid';
@@ -505,6 +486,7 @@ function realizarSorteio() {
 }
 
 function adicionarConvidado() {
+    if (!AUTH.user) { alert('Entre com sua conta para adicionar convidados.'); return; }
     if (!grupoAtual) { alert('Aguarde carregar os jogadores.'); return; }
     var nome = document.getElementById('convidadoNome').value.trim();
     var tipo = document.getElementById('convidadoTipo').value;
@@ -512,14 +494,6 @@ function adicionarConvidado() {
     if (!nome) { alert('Informe o nome do convidado.'); return; }
     var menina = document.getElementById('convidadoMenina').checked;
     var convidado = { nome: nome, categoria: categoria, goleiro: tipo === 'goleiro', presente: true, convidado: true, menina: menina, grupo_id: grupoAtual.id };
-    /* Visitante sem login: convidado vale só nesta sessão (não persiste). */
-    if (!AUTH.user) {
-        jogadores.push(convidado);
-        renderLista();
-        document.getElementById('convidadoNome').value = '';
-        document.getElementById('convidadoMenina').checked = false;
-        return;
-    }
     salvarJogadorNoSupabase(convidado);
 }
 
@@ -591,17 +565,20 @@ function renderLoginScreen() {
     var ls = document.getElementById('loginSection');
     if (!ls) return;
     var mainEl = document.getElementById('mainApp');
-    if (mainEl && !AUTH.user) mainEl.style.display = 'none';
-    ls.innerHTML = '<div class="login-overlay"><div class="login-card"><div class="login-header"><h2>Sorteador de Times</h2><p>Area do organizador</p></div><div class="login-body"><div id="loginForm"><div class="form-group"><label for="loginEmail">Seu e-mail</label><input type="email" id="loginEmail" placeholder="seu@email.com" autocomplete="email"></div><div class="form-group"><label for="loginPassword">Sua senha</label><input type="password" id="loginPassword" placeholder="Sua senha" autocomplete="current-password"></div><button id="btnLogin" class="btn-primary" onclick="doLogin()">Entrar</button><p id="loginSwitchText" class="login-hint"><a href="#" onclick="showSignupForm(); return false;">Nao tem conta? Cadastre-se</a></p></div><div id="loginLoading" style="display:none;"><p>Entrando...</p></div><div id="loginStatus"></div></div></div></div>';
-    ls.style.display = 'flex';
+    var adminSection = document.getElementById('adminSection');
+    if (mainEl) mainEl.style.display = 'none';
+    if (adminSection) adminSection.style.display = 'none';
+    resetHeaderGenerico();
+    ls.innerHTML = '<div class="login-page"><div class="login-card"><img src="sorteador-logo.png" alt="Sorteador de Times" class="login-logo"><div class="login-header"><h2>Sorteador de Times</h2><p>Area do organizador</p></div><div class="login-body"><div id="loginForm"><div class="form-group"><label for="loginEmail">Seu e-mail</label><input type="email" id="loginEmail" placeholder="seu@email.com" autocomplete="email"></div><div class="form-group"><label for="loginPassword">Sua senha</label><input type="password" id="loginPassword" placeholder="Sua senha" autocomplete="current-password"></div><button id="btnLogin" class="btn-primary" onclick="doLogin()">Entrar</button><p id="loginSwitchText" class="login-hint"><a href="#" onclick="showSignupForm(); return false;">Nao tem conta? Cadastre-se</a></p></div><div id="loginLoading" style="display:none;"><p>Entrando...</p></div><div id="loginStatus"></div></div></div></div>';
+    ls.style.display = 'block';
 }
 
 /* Cadastro: cria o usuario no Supabase Auth e oferece Criar grupo / Entrar em grupo */
 function showSignupForm(prefillEmail) {
     var ls = document.getElementById('loginSection');
     if (!ls) return;
-    ls.innerHTML = '<div class="login-overlay"><div class="login-card"><div class="login-header"><h2>Criar conta</h2><p>Primeiro, crie seu usuario</p></div><div class="login-body"><div id="signupForm"><div class="form-group"><label for="signupUsername">Nome de usuario</label><input type="text" id="signupUsername" placeholder="Seu nome" autocomplete="nickname"></div><div class="form-group"><label for="signupEmail">Seu e-mail</label><input type="email" id="signupEmail" placeholder="seu@email.com" autocomplete="email" value="' + (prefillEmail || '') + '"></div><div class="form-group"><label for="signupPassword">Senha</label><input type="password" id="signupPassword" placeholder="Minimo 6 caracteres" autocomplete="new-password"></div><button class="btn-primary" onclick="doSignup()">Criar conta</button><p class="login-hint"><a href="#" onclick="renderLoginScreen(); return false;">Ja tenho conta</a></p></div><div id="signupLoading" style="display:none;"><p>Criando...</p></div><div id="signupStatus"></div></div></div></div>';
-    ls.style.display = 'flex';
+    ls.innerHTML = '<div class="login-page"><div class="login-card"><img src="sorteador-logo.png" alt="Sorteador de Times" class="login-logo"><div class="login-header"><h2>Criar conta</h2><p>Primeiro, crie seu usuario</p></div><div class="login-body"><div id="signupForm"><div class="form-group"><label for="signupUsername">Nome de usuario</label><input type="text" id="signupUsername" placeholder="Seu nome" autocomplete="nickname"></div><div class="form-group"><label for="signupEmail">Seu e-mail</label><input type="email" id="signupEmail" placeholder="seu@email.com" autocomplete="email" value="' + (prefillEmail || '') + '"></div><div class="form-group"><label for="signupPassword">Senha</label><input type="password" id="signupPassword" placeholder="Minimo 6 caracteres" autocomplete="new-password"></div><button class="btn-primary" onclick="doSignup()">Criar conta</button><p class="login-hint"><a href="#" onclick="renderLoginScreen(); return false;">Ja tenho conta</a></p></div><div id="signupLoading" style="display:none;"><p>Criando...</p></div><div id="signupStatus"></div></div></div></div>';
+    ls.style.display = 'block';
 }
 
 function showGroupChoice() {
@@ -610,8 +587,8 @@ function showGroupChoice() {
     var name = PENDING_SIGNUP ? PENDING_SIGNUP.username : displayName();
     var mainEl = document.getElementById('mainApp');
     if (mainEl) mainEl.style.display = 'none';
-    ls.innerHTML = '<div class="login-overlay"><div class="login-card"><div class="login-header"><h2>Ola, ' + name + '</h2><p>Voce ainda nao tem grupo. Escolha uma opcao:</p></div><div class="login-body"><div id="newUserForm"><button class="btn-primary" onclick="showCreateGroup()">Criar grupo</button><button class="btn-secondary" onclick="showJoinGroup()">Entrar em grupo</button><p class="login-hint"><a href="#" onclick="logout(); return false;">Sair</a></p></div></div></div></div>';
-    ls.style.display = 'flex';
+    ls.innerHTML = '<div class="login-page"><div class="login-card"><img src="sorteador-logo.png" alt="Sorteador de Times" class="login-logo"><div class="login-header"><h2>Ola, ' + name + '</h2><p>Voce ainda nao tem grupo. Escolha uma opcao:</p></div><div class="login-body"><div id="newUserForm"><button class="btn-primary" onclick="showCreateGroup()">Criar grupo</button><button class="btn-secondary" onclick="showJoinGroup()">Entrar em grupo</button><p class="login-hint"><a href="#" onclick="logout(); return false;">Sair</a></p></div></div></div></div>';
+    ls.style.display = 'block';
 }
 
 function showCreateGroup() {
@@ -619,7 +596,7 @@ function showCreateGroup() {
     if (!ls) return;
     var email = PENDING_SIGNUP ? PENDING_SIGNUP.email : (AUTH.user ? AUTH.user.email : '');
     var username = PENDING_SIGNUP ? PENDING_SIGNUP.username : (displayName() || '');
-    ls.innerHTML = '<div class="login-overlay"><div class="login-card"><div class="login-header"><h2>Criar Grupo</h2><p>Voce sera o owner do grupo</p></div><div class="login-body"><div id="createGroupForm"><div class="form-group"><label for="groupName">Nome do grupo</label><input type="text" id="groupName" placeholder="Ex: Boleiros de Cristo"></div><div class="form-group"><label for="groupLogo">Logo (URL ou arquivo)</label><input type="text" id="groupLogo" placeholder="logo-boleiros.png (opcional)"><input type="file" id="groupLogoFile" accept="image/*" style="margin-top:8px;"><img id="groupLogoPreview" style="display:none;max-width:96px;margin-top:8px;border-radius:8px;"></div><div class="form-group"><label for="newUsername">Seu nome de usuario</label><input type="text" id="newUsername" placeholder="Seu nome" value="' + username + '"></div><div class="form-group"><label for="newEmail">Seu e-mail</label><input type="email" id="newEmail" placeholder="seu@email.com" value="' + email + '"></div><div class="form-group"><label for="newPassword">Senha</label><input type="password" id="newPassword" placeholder="Sua senha"></div><button class="btn-primary" onclick="doCreateGroup()">Criar Grupo</button><p class="login-hint"><a href="#" onclick="showGroupChoice(); return false;">Voltar</a></p></div><div id="createGroupLoading" style="display:none;"><p>Criando...</p></div><div id="createGroupStatus"></div></div></div></div>';
+    ls.innerHTML = '<div class="login-page"><div class="login-card"><img src="sorteador-logo.png" alt="Sorteador de Times" class="login-logo"><div class="login-header"><h2>Criar Grupo</h2><p>Voce sera o owner do grupo</p></div><div class="login-body"><div id="createGroupForm"><div class="form-group"><label for="groupName">Nome do grupo</label><input type="text" id="groupName" placeholder="Ex: Boleiros de Cristo"></div><div class="form-group"><label for="groupLogo">Logo (URL ou arquivo)</label><input type="text" id="groupLogo" placeholder="logo-boleiros.png (opcional)"><input type="file" id="groupLogoFile" accept="image/*" style="margin-top:8px;"><img id="groupLogoPreview" style="display:none;max-width:96px;margin-top:8px;border-radius:8px;"></div><div class="form-group"><label for="newUsername">Seu nome de usuario</label><input type="text" id="newUsername" placeholder="Seu nome" value="' + username + '"></div><div class="form-group"><label for="newEmail">Seu e-mail</label><input type="email" id="newEmail" placeholder="seu@email.com" value="' + email + '"></div><div class="form-group"><label for="newPassword">Senha</label><input type="password" id="newPassword" placeholder="Sua senha"></div><button class="btn-primary" onclick="doCreateGroup()">Criar Grupo</button><p class="login-hint"><a href="#" onclick="showGroupChoice(); return false;">Voltar</a></p></div><div id="createGroupLoading" style="display:none;"><p>Criando...</p></div><div id="createGroupStatus"></div></div></div></div>';
     var fileInput = document.getElementById('groupLogoFile');
     if (fileInput) fileInput.addEventListener('change', function() {
         var f = fileInput.files && fileInput.files[0];
@@ -635,7 +612,7 @@ function showJoinGroup() {
     if (!ls) return;
     var email = PENDING_SIGNUP ? PENDING_SIGNUP.email : (AUTH.user ? AUTH.user.email : '');
     var username = PENDING_SIGNUP ? PENDING_SIGNUP.username : (displayName() || '');
-    ls.innerHTML = '<div class="login-overlay"><div class="login-card"><div class="login-header"><h2>Entrar em Grupo</h2><p>O owner precisa aprovar seu pedido</p></div><div class="login-body"><div id="joinGroupForm"><div class="form-group"><label for="joinUsername">Seu nome de usuario</label><input type="text" id="joinUsername" placeholder="Seu nome" value="' + username + '"></div><div class="form-group"><label for="joinEmail">Seu e-mail</label><input type="email" id="joinEmail" placeholder="seu@email.com" value="' + email + '"></div><div class="form-group"><label for="joinPassword">Sua senha</label><input type="password" id="joinPassword" placeholder="Sua senha"></div><div class="form-group"><label for="joinSlug">Codigo do grupo</label><input type="text" id="joinSlug" placeholder="ex: boleiros-de-cristo" autocomplete="off"></div><button class="btn-primary" onclick="doJoinGroup()">Pedir acesso</button><p class="login-hint"><a href="#" onclick="showGroupChoice(); return false;">Voltar</a></p></div><div id="joinGroupLoading" style="display:none;"><p>Solicitando...</p></div><div id="joinGroupStatus"></div></div></div></div>';
+    ls.innerHTML = '<div class="login-page"><div class="login-card"><img src="sorteador-logo.png" alt="Sorteador de Times" class="login-logo"><div class="login-header"><h2>Entrar em Grupo</h2><p>O owner precisa aprovar seu pedido</p></div><div class="login-body"><div id="joinGroupForm"><div class="form-group"><label for="joinUsername">Seu nome de usuario</label><input type="text" id="joinUsername" placeholder="Seu nome" value="' + username + '"></div><div class="form-group"><label for="joinEmail">Seu e-mail</label><input type="email" id="joinEmail" placeholder="seu@email.com" value="' + email + '"></div><div class="form-group"><label for="joinPassword">Sua senha</label><input type="password" id="joinPassword" placeholder="Sua senha"></div><div class="form-group"><label for="joinSlug">Codigo do grupo</label><input type="text" id="joinSlug" placeholder="ex: boleiros-de-cristo" autocomplete="off"></div><button class="btn-primary" onclick="doJoinGroup()">Pedir acesso</button><p class="login-hint"><a href="#" onclick="showGroupChoice(); return false;">Voltar</a></p></div><div id="joinGroupLoading" style="display:none;"><p>Solicitando...</p></div><div id="joinGroupStatus"></div></div></div></div>';
 }
 
 function doLogin() {
@@ -727,7 +704,7 @@ function doCreateGroup() {
             finish(up.url);
         });
     } else {
-        finish(logoTyped || 'logo-boleiros.png');
+        finish(logoTyped || SYSTEM_LOGO);
     }
 }
 
@@ -754,4 +731,4 @@ function doJoinGroup() {
     });
 }
 
-document.addEventListener('DOMContentLoaded', function() { renderPublicHome(); initAuth(); });
+document.addEventListener('DOMContentLoaded', function() { renderLoginScreen(); initAuth(); });
