@@ -50,6 +50,10 @@
     </div>
     <div id="pendingPanel"></div>
 </div>
+<nav class="app-nav" id="appNav">
+    <button class="nav-tab active" id="tabSorteador" onclick="trocarAba('sorteador')">⚽ Sorteador</button>
+    <button class="nav-tab" id="tabArtilharia" onclick="trocarAba('artilharia')">🏆 Artilharia</button>
+</nav>
 <main class="container" id="mainApp">
     <section class="card card-players">
         <div class="card-header-row">
@@ -104,6 +108,7 @@
         <div id="resultado"></div>
     </section>
 </main>
+<main class="container" id="artilhariaApp" style="display:none;"></main>
 <div id="playerModal"></div>
 <div id="installBanner" style="display:none;">
     <img src="icons/icon-192.png" alt="" width="40" height="40">

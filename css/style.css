@@ -1216,3 +1216,473 @@ flex: 1;
     width: auto;
     margin-top: 0;
 }
+
+
+/* ============================================================
+   MÓDULO DE ARTILHARIA E RANKINGS
+   ============================================================ */
+
+/* Navegação por Abas */
+.app-nav {
+    display: flex;
+    max-width: 900px;
+    margin: 8px auto 0;
+    padding: 0 12px;
+    gap: 8px;
+    width: 100%;
+}
+
+.nav-tab {
+    flex: 1;
+    background: #e0e0e0;
+    color: #444;
+    border: none;
+    padding: 12px 16px;
+    font-size: 15px;
+    font-weight: 700;
+    border-radius: 10px 10px 0 0;
+    cursor: pointer;
+    transition: all 0.2s ease;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    gap: 6px;
+}
+
+.nav-tab.active {
+    background: var(--card);
+    color: var(--primary-dark);
+    box-shadow: 0 -2px 6px rgba(0,0,0,0.06);
+    border-top: 3px solid var(--primary);
+}
+
+/* Barra Admin de Artilharia */
+.artilharia-admin-bar {
+    display: flex;
+    gap: 10px;
+    margin-bottom: 14px;
+    flex-wrap: wrap;
+}
+
+.artilharia-admin-bar .btn-primary {
+    flex: 1.4;
+    margin: 0;
+}
+
+.artilharia-admin-bar .btn-secondary {
+    flex: 1;
+    margin: 0;
+}
+
+/* Card de Períodos e Tabs */
+.card-periodos {
+    margin-bottom: 16px;
+    padding: 12px;
+}
+
+.periodo-tabs {
+    display: flex;
+    gap: 6px;
+    overflow-x: auto;
+    padding-bottom: 4px;
+    scrollbar-width: none;
+}
+
+.periodo-tabs::-webkit-scrollbar {
+    display: none;
+}
+
+.periodo-tab {
+    flex: 1;
+    min-width: 68px;
+    background: #f0f0f0;
+    color: #555;
+    border: 1px solid #ddd;
+    padding: 8px 10px;
+    font-size: 13px;
+    font-weight: 600;
+    border-radius: 20px;
+    cursor: pointer;
+    white-space: nowrap;
+    text-align: center;
+    transition: all 0.15s ease;
+}
+
+.periodo-tab.active {
+    background: var(--primary);
+    color: #fff;
+    border-color: var(--primary-dark);
+    box-shadow: 0 2px 6px rgba(245, 124, 0, 0.35);
+}
+
+.periodo-select-row {
+    margin-top: 10px;
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    font-size: 13px;
+    color: #555;
+}
+
+.periodo-select-row select {
+    flex: 1;
+    padding: 8px 12px;
+    border: 1px solid var(--border);
+    border-radius: 8px;
+    font-size: 14px;
+    font-weight: 600;
+    background: #fff;
+    color: var(--black);
+}
+
+/* Container do Ranking (Capturável por imagem) */
+.card-ranking-container {
+    background: #fff;
+    border-radius: 14px;
+    padding: 16px;
+    box-shadow: 0 2px 8px rgba(0,0,0,0.06);
+    border: 1px solid var(--border);
+    margin-bottom: 16px;
+}
+
+.ranking-header {
+    display: flex;
+    align-items: center;
+    gap: 12px;
+    padding-bottom: 12px;
+    border-bottom: 2px solid #f0f0f0;
+    margin-bottom: 16px;
+}
+
+.ranking-header-logo {
+    border-radius: 10px;
+    object-fit: contain;
+}
+
+.ranking-header-text h2 {
+    font-size: 18px;
+    color: var(--black);
+    font-weight: 800;
+}
+
+.ranking-sub {
+    font-size: 13px;
+    color: var(--primary-dark);
+    font-weight: 700;
+}
+
+.ranking-empty {
+    text-align: center;
+    padding: 32px 16px;
+    color: var(--muted);
+}
+
+/* PÓDIO TOP 3 */
+.podio-container {
+    display: flex;
+    align-items: flex-end;
+    justify-content: center;
+    gap: 8px;
+    margin: 16px 0 24px;
+    padding: 0 4px;
+}
+
+.podio-item {
+    flex: 1;
+    max-width: 120px;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    text-align: center;
+}
+
+.podio-coroa {
+    font-size: 20px;
+    margin-bottom: -4px;
+}
+
+.podio-medalha {
+    font-size: 22px;
+}
+
+.podio-avatar {
+    width: 44px;
+    height: 44px;
+    border-radius: 50%;
+    background: #e0e0e0;
+    color: #444;
+    font-weight: 800;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    font-size: 14px;
+    border: 2px solid #fff;
+    box-shadow: 0 2px 6px rgba(0,0,0,0.15);
+    margin: 4px 0;
+}
+
+.podio-avatar-ouro {
+    width: 52px;
+    height: 52px;
+    background: linear-gradient(135deg, #FFD700, #FFA500);
+    color: #fff;
+    font-size: 16px;
+    border: 3px solid #fff;
+    box-shadow: 0 3px 8px rgba(255, 170, 0, 0.4);
+}
+
+.podio-nome {
+    font-size: 12px;
+    font-weight: 700;
+    color: var(--black);
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    width: 100%;
+}
+
+.podio-gols {
+    font-size: 11px;
+    color: #555;
+    margin-bottom: 6px;
+}
+
+.gols-destaque {
+    font-size: 14px;
+    color: var(--primary-dark);
+}
+
+.podio-degrau {
+    width: 100%;
+    border-radius: 8px 8px 0 0;
+    color: #fff;
+    font-weight: 800;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+}
+
+.degrau-1 {
+    height: 72px;
+    background: linear-gradient(180deg, #F57C00, #D84315);
+    font-size: 20px;
+}
+
+.degrau-2 {
+    height: 54px;
+    background: linear-gradient(180deg, #90A4AE, #607D8B);
+    font-size: 16px;
+}
+
+.degrau-3 {
+    height: 42px;
+    background: linear-gradient(180deg, #BCAAA4, #8D6E63);
+    font-size: 14px;
+}
+
+/* TABELA DE RANKING */
+.ranking-tabela-card {
+    overflow-x: auto;
+    border-radius: 8px;
+    border: 1px solid #eee;
+}
+
+.ranking-tabela {
+    width: 100%;
+    border-collapse: collapse;
+    font-size: 13px;
+    text-align: left;
+}
+
+.ranking-tabela th {
+    background: #fafafa;
+    color: #666;
+    padding: 10px 8px;
+    font-weight: 700;
+    border-bottom: 2px solid #eee;
+}
+
+.ranking-tabela td {
+    padding: 10px 8px;
+    border-bottom: 1px solid #f0f0f0;
+}
+
+.ranking-tabela tr.linha-destaque {
+    background: #fffdf9;
+}
+
+.col-pos {
+    font-weight: 800;
+    text-align: center;
+    font-size: 14px;
+}
+
+.col-nome {
+    color: var(--black);
+}
+
+.badge-gols {
+    background: var(--primary);
+    color: #fff;
+    padding: 3px 8px;
+    border-radius: 12px;
+    font-weight: 800;
+    font-size: 13px;
+    display: inline-block;
+}
+
+.ranking-footer {
+    text-align: center;
+    font-size: 11px;
+    color: #999;
+    margin-top: 14px;
+    padding-top: 10px;
+    border-top: 1px dashed #eee;
+}
+
+/* Modais de Lançamento e Histórico */
+.modal-lancar-gols,
+.modal-historico-rodadas {
+    max-height: 85vh;
+    display: flex;
+    flex-direction: column;
+}
+
+.modal-header-lancar {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    margin-bottom: 14px;
+}
+
+.btn-fechar-modal {
+    background: none;
+    border: none;
+    font-size: 24px;
+    color: #888;
+    cursor: pointer;
+    line-height: 1;
+}
+
+.lancar-atalhos {
+    display: flex;
+    gap: 8px;
+    margin-bottom: 12px;
+}
+
+.input-busca-gols {
+    flex: 1;
+    padding: 8px 12px;
+    border: 1px solid var(--border);
+    border-radius: 8px;
+    font-size: 13px;
+}
+
+.lista-gols-inputs {
+    flex: 1;
+    overflow-y: auto;
+    max-height: 48vh;
+    display: flex;
+    flex-direction: column;
+    gap: 6px;
+    padding-right: 4px;
+}
+
+.item-gol-jogador {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    padding: 8px 12px;
+    background: #fafafa;
+    border: 1px solid #e6e6e6;
+    border-radius: 8px;
+    transition: background 0.15s;
+}
+
+.item-gol-jogador.com-gol {
+    background: #fff3e0;
+    border-color: #ffb74d;
+}
+
+.item-destaque-presente {
+    border-left: 4px solid var(--primary);
+}
+
+.item-gol-contador {
+    display: flex;
+    align-items: center;
+    gap: 6px;
+}
+
+.btn-contador {
+    width: 36px;
+    height: 36px;
+    border-radius: 8px;
+    border: 1px solid #ccc;
+    background: #fff;
+    font-size: 18px;
+    font-weight: 800;
+    color: var(--black);
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    cursor: pointer;
+}
+
+.btn-contador:active {
+    background: #e0e0e0;
+}
+
+.input-gols-val {
+    width: 44px;
+    height: 36px;
+    text-align: center;
+    font-size: 16px;
+    font-weight: 800;
+    border: 1px solid #ccc;
+    border-radius: 8px;
+    color: var(--primary-dark);
+}
+
+.modal-footer-lancar {
+    display: flex;
+    gap: 10px;
+    margin-top: 16px;
+    padding-top: 12px;
+    border-top: 1px solid #eee;
+}
+
+.modal-footer-lancar button {
+    flex: 1;
+}
+
+/* Lista Histórico de Rodadas */
+.lista-historico {
+    max-height: 55vh;
+    overflow-y: auto;
+    display: flex;
+    flex-direction: column;
+    gap: 8px;
+}
+
+.item-historico-rodada {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    padding: 10px 12px;
+    background: #fafafa;
+    border: 1px solid #e6e6e6;
+    border-radius: 8px;
+}
+
+.hist-obs {
+    font-size: 13px;
+    color: #666;
+    font-style: italic;
+}
+
+.hist-sub {
+    font-size: 12px;
+    color: #777;
+    margin-top: 2px;
+}

@@ -17,11 +17,41 @@ import {
     removerJogador, adicionarConvidado, desmarcarTodos, renderLista
 } from './jogadores.js';
 import { realizarSorteio, compartilharImagem } from './sorteio.js';
+import {
+    carregarDadosArtilharia, trocarTipoPeriodo, trocarChavePeriodo,
+    abrirModalLancarGols, fecharModalLancarGols, ajustarGol, validarInputGol,
+    filtrarJogadoresModal, importarPresentesNaRodada, salvarGolsRodada,
+    abrirHistoricoRodadas, fecharModalHistorico, excluirRodada,
+    compartilharRankingImagem
+} from './artilharia.js';
 import { registerServiceWorker, initInstallPrompt, doInstall, dismissInstall } from './pwa.js';
+
+export function trocarAba(aba) {
+    var tabS = document.getElementById('tabSorteador');
+    var tabA = document.getElementById('tabArtilharia');
+    var appMain = document.getElementById('mainApp');
+    var appArt = document.getElementById('artilhariaApp');
+
+    if (aba === 'artilharia') {
+        if (tabS) tabS.classList.remove('active');
+        if (tabA) tabA.classList.add('active');
+        if (appMain) appMain.style.display = 'none';
+        if (appArt) appArt.style.display = 'block';
+        carregarDadosArtilharia();
+    } else {
+        if (tabA) tabA.classList.remove('active');
+        if (tabS) tabS.classList.add('active');
+        if (appArt) appArt.style.display = 'none';
+        if (appMain) appMain.style.display = 'block';
+    }
+}
 
 // Expor funções necessárias para o escopo global (window),
 // garantindo compatibilidade com onclick inline no HTML e templates dinâmicos
 Object.assign(window, {
+    // Navegação de Abas
+    trocarAba,
+
     // Autenticação & Fluxo de Telas
     initAuth,
     loginWithEmail,
@@ -64,6 +94,22 @@ Object.assign(window, {
     // Sorteio
     realizarSorteio,
     compartilharImagem,
+
+    // Artilharia & Rankings
+    carregarDadosArtilharia,
+    trocarTipoPeriodo,
+    trocarChavePeriodo,
+    abrirModalLancarGols,
+    fecharModalLancarGols,
+    ajustarGol,
+    validarInputGol,
+    filtrarJogadoresModal,
+    importarPresentesNaRodada,
+    salvarGolsRodada,
+    abrirHistoricoRodadas,
+    fecharModalHistorico,
+    excluirRodada,
+    compartilharRankingImagem,
 
     // PWA
     doInstall,
