@@ -1,11 +1,20 @@
 /* Service Worker - Sorteador de Times (app shell + fallback offline) */
-var CACHE_NAME = 'sorteador-v1';
+var CACHE_NAME = 'sorteador-v3';
 var APP_SHELL = [
   './',
   './index.html',
   './manifest.json',
   './css/style.css',
+  './js/utils.js',
+  './js/config.js',
+  './js/state.js',
+  './js/storage.js',
+  './js/pwa.js',
+  './js/sorteio.js',
+  './js/jogadores.js',
+  './js/grupos.js',
   './js/auth.js',
+  './js/main.js',
   './sorteador-logo.png',
   './icons/icon-192.png',
   './icons/icon-512.png'

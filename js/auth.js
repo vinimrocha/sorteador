@@ -1,14 +1,12 @@
-const AUTH = { loading: false, user: null, session: null };
-var grupoAtual = null;
+/* Autenticação, Telas de Login/Cadastro e Fluxo Principal */
+import { state, displayName } from './state.js';
+import { supabaseClient, SYSTEM_LOGO } from './config.js';
+import {
+    getMyGroups, getPendingRequests, renderGroupSelector,
+    carregarGrupo, createUserAndGroup, joinGroup, loadJoinGroups
+} from './grupos.js';
 
-const SUPABASE_URL = 'https://maqdmlsouqmadoaayrcv.supabase.co';
-const SUPABASE_ANON_KEY = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6Im1hcWRtbHNvdXFtYWRvYWF5cmN2Iiwicm9sZSI6ImFub24iLCJpYXQiOjE3ODg1NjQ2ODMsImV4cCI6MjEwNDE0MDY4M30.QTLO0en8WYvsdPMdkKuNUefSk8N1w72-B89a-4beRFM';
-
-window.SUPABASE_URL = SUPABASE_URL;
-window.SUPABASE_ANON_KEY = SUPABASE_ANON_KEY;
-window.supabaseClient = window.supabase.createClient(SUPABASE_URL, SUPABASE_ANON_KEY);
-
-function initAuth() {
+export function initAuth() {
     try {
         var hash = window.location.hash;
         if (hash && hash.includes('access_token')) {
@@ -17,10 +15,10 @@ function initAuth() {
             var refreshToken = params.get('refresh_token');
             if (accessToken) {
                 supabaseClient.auth.setSession({ access_token: accessToken, refresh_token: refreshToken }).then(function(data) {
-                    AUTH.session = data.session;
-                    AUTH.user = data.session ? data.session.user : null;
+                    state.AUTH.session = data.session;
+                    state.AUTH.user = data.session ? data.session.user : null;
                     window.history.replaceState({}, document.title, window.location.pathname);
-                    onAuthStateChanged(AUTH.user);
+                    onAuthStateChanged(state.AUTH.user);
                 });
                 return;
             }
@@ -30,29 +28,23 @@ function initAuth() {
             return;
         }
         supabaseClient.auth.getSession().then(function(result) {
-            AUTH.session = result.data.session;
-            AUTH.user = result.data.session ? result.data.session.user : null;
+            state.AUTH.session = result.data.session;
+            state.AUTH.user = result.data.session ? result.data.session.user : null;
         });
         supabaseClient.auth.onAuthStateChange(function(event, session) {
-            AUTH.session = session;
-            AUTH.user = session ? session.user : null;
-            onAuthStateChanged(AUTH.user);
+            state.AUTH.session = session;
+            state.AUTH.user = session ? session.user : null;
+            if (event === 'TOKEN_REFRESHED' && state.grupoAtual) {
+                return;
+            }
+            onAuthStateChanged(state.AUTH.user);
         });
     } catch (err) {
         console.error('Erro ao inicializar auth:', err);
     }
 }
 
-/* Cadastro temporario entre signup e escolha criar/entrar em grupo */
-var PENDING_SIGNUP = null;
-
-function slugify(texto) {
-    return (texto || '').toLowerCase().normalize('NFD').replace(/[\u0300-\u036f]/g, '')
-        .replace(/[^a-z0-9]+/g, '-').replace(/^-+|-+$/g, '').substring(0, 30) || 'grupo';
-}
-
-/* Garante sessao apos signUp (quando confirmacao de email esta desligada). */
-function ensureSession(email, password) {
+export function ensureSession(email, password) {
     return supabaseClient.auth.getSession().then(function(result) {
         if (result.data && result.data.session) return { success: true, session: result.data.session };
         return supabaseClient.auth.signInWithPassword({ email: email.trim(), password: password }).then(function(r) {
@@ -62,9 +54,7 @@ function ensureSession(email, password) {
     });
 }
 
-/* Cria o usuario no Supabase Auth (authentication/users).
-   Dados do usuario: email (pk), senha, Nome de usuario (user_metadata.display_name). */
-function signupUser(email, password, username) {
+export function signupUser(email, password, username) {
     return supabaseClient.auth.signUp({
         email: email.trim().toLowerCase(),
         password: password,
@@ -73,155 +63,53 @@ function signupUser(email, password, username) {
         if (result.error) {
             var msg = (result.error.message || '').toLowerCase();
             if (msg.indexOf('already registered') >= 0 || msg.indexOf('already exists') >= 0) {
-                return { success: false, alreadyRegistered: true, error: 'Este e-mail ja tem conta. Faca login.' };
+                return { success: false, alreadyRegistered: true, error: 'Este e-mail já tem conta. Faça login.' };
             }
             if (msg.indexOf('invalid') >= 0) {
-                return { success: false, error: 'E-mail recusado pelo servidor. Use um e-mail real/valido ou configure o SMTP no Supabase (Auth > Settings).' };
+                return { success: false, error: 'E-mail recusado pelo servidor. Use um e-mail válido.' };
             }
             return { success: false, error: result.error.message };
         }
         var user = result.data.user;
-        PENDING_SIGNUP = { email: email.trim().toLowerCase(), password: password, username: username.trim(), userId: user ? user.id : null };
+        state.PENDING_SIGNUP = { email: email.trim().toLowerCase(), password: password, username: username.trim(), userId: user ? user.id : null };
         return ensureSession(email, password).then(function(s) {
-            if (!s.success) return { success: false, error: 'Conta criada! Confirme seu e-mail e faca login.' };
-            AUTH.session = s.session;
-            AUTH.user = s.session.user;
-            if (PENDING_SIGNUP) PENDING_SIGNUP.userId = AUTH.user.id;
-            return { success: true, user: AUTH.user };
+            if (!s.success) return { success: false, error: 'Conta criada! Confirme seu e-mail e faça login.' };
+            state.AUTH.session = s.session;
+            state.AUTH.user = s.session.user;
+            if (state.PENDING_SIGNUP) state.PENDING_SIGNUP.userId = state.AUTH.user.id;
+            return { success: true, user: state.AUTH.user };
         });
     });
 }
 
-/* Upload da logo para o bucket 'logos' (Supabase Storage) e retorna a URL publica,
-   salva em grupos.logo_url pelo CRUD de criar grupo. */
-function uploadLogo(file) {
-    var ext = ((file.name || '').split('.').pop() || 'png').toLowerCase().substring(0, 4);
-    var path = 'grupos/' + Date.now().toString(36) + '-' + Math.random().toString(36).substring(2, 8) + '.' + ext;
-    return supabaseClient.storage.from('logos').upload(path, file, { upsert: false }).then(function(r) {
-        if (r.error) return { success: false, error: r.error.message };
-        var pub = supabaseClient.storage.from('logos').getPublicUrl(path);
-        return { success: true, url: pub.data.publicUrl };
-    });
-}
-
-/* Cria grupo (nome + logo) e vincula o usuario como owner (aprovado). */
-function createUserAndGroup(email, password, username, nomeGrupo, logoUrl) {
-    var ctx = null;
-    return signupUser(email, password, username).then(function(result) {
-        if (!result.success && !result.alreadyRegistered) return result;
-        if (result.alreadyRegistered) {
-            return ensureSession(email, password).then(function(s) {
-                if (!s.success) return { success: false, error: 'Este e-mail ja tem conta. Faca login.' };
-                AUTH.session = s.session;
-                AUTH.user = s.session.user;
-                PENDING_SIGNUP = { email: email.trim().toLowerCase(), password: password, username: username.trim(), userId: AUTH.user.id };
-                return { success: true, user: AUTH.user };
-            });
+export function loginWithEmail(email, password) {
+    state.AUTH.loading = true;
+    return supabaseClient.auth.signInWithPassword({ email: email.trim(), password: password }).then(function(result) {
+        if (result.error) {
+            var msg = (result.error.message || '').toLowerCase();
+            if (msg.indexOf('invalid login credentials') >= 0 || msg.indexOf('invalid') >= 0) {
+                return { success: false, notFound: true, error: 'E-mail não encontrado.' };
+            }
+            return { success: false, error: result.error.message };
         }
-        return result;
-    }).then(function(result) {
-        if (!result.success) return result;
-        ctx = { userId: AUTH.user.id, email: email.trim().toLowerCase() };
-        var slug = slugify(nomeGrupo) + '-' + Date.now().toString(36);
-        return supabaseClient.from('grupos').insert({ nome: nomeGrupo.trim(), slug: slug, logo_url: (logoUrl || SYSTEM_LOGO) }).select().then(function(r) {
-            if (r.error) return { success: false, error: r.error.message };
-            return { success: true, grupo: r.data[0] };
-        });
-    }).then(function(result) {
-        if (!result.success) return result;
-        return supabaseClient.from('usuarios_grupo').insert({
-            grupo_id: result.grupo.id,
-            email: ctx.email,
-            user_id: ctx.userId,
-            role: 'owner',
-            status: 'approved'
-        }).select().then(function(r) {
-            if (r.error) return { success: false, error: r.error.message };
-            PENDING_SIGNUP = null;
-            return { success: true, grupo: result.grupo };
-        });
+        return { success: true, message: 'Logado com sucesso!' };
+    }).finally(function() { state.AUTH.loading = false; });
+}
+
+export function logout() {
+    state.PENDING_SIGNUP = null;
+    state.LOGO_FILE = null;
+    state.JOIN_SLUG = null;
+    supabaseClient.auth.signOut().then(function() {
+        state.AUTH.user = null;
+        state.AUTH.session = null;
+        onAuthStateChanged(null);
+    }).catch(function(err) {
+        console.error('Erro ao logout:', err);
     });
 }
 
-/* Pede para entrar em grupo existente: cria conta (se preciso) e registra
-   pedido pendente de admin para aprovacao do owner. */
-function joinGroup(email, password, username, groupSlug) {
-    var ctx = null;
-    var grupo = null;
-    return signupUser(email, password, username).then(function(result) {
-        if (!result.success && !result.alreadyRegistered) return result;
-        if (result.alreadyRegistered) {
-            return ensureSession(email, password).then(function(s) {
-                if (!s.success) return { success: false, error: 'Este e-mail ja tem conta. Faca login.' };
-                AUTH.session = s.session;
-                AUTH.user = s.session.user;
-                PENDING_SIGNUP = { email: email.trim().toLowerCase(), password: password, username: (username || '').trim(), userId: AUTH.user.id };
-                return { success: true, user: AUTH.user };
-            });
-        }
-        return result;
-    }).then(function(result) {
-        if (!result.success) return result;
-        ctx = { userId: AUTH.user.id, email: email.trim().toLowerCase() };
-        return supabaseClient.from('grupos').select('id, nome, slug').eq('slug', groupSlug.trim().toLowerCase()).single().then(function(r) {
-            if (r.error || !r.data) return { success: false, error: 'Grupo nao encontrado. Confira o codigo.' };
-            grupo = r.data;
-            return supabaseClient.from('usuarios_grupo').select('id, status').eq('grupo_id', grupo.id).eq('user_id', ctx.userId).maybeSingle().then(function(ex) {
-                if (ex.data) return { success: false, error: ex.data.status === 'approved' ? 'Voce ja e admin deste grupo.' : 'Pedido ja enviado. Aguarde aprovacao do owner.' };
-                return { success: true };
-            });
-        });
-    }).then(function(result) {
-        if (!result.success) return result;
-        return supabaseClient.from('usuarios_grupo').select('id', { count: 'exact' }).eq('grupo_id', grupo.id).then(function(c) {
-            if ((c.count || 0) >= 5) return { success: false, error: 'Este grupo ja tem 5 administradores (limite).' };
-            return supabaseClient.from('usuarios_grupo').insert({
-                grupo_id: grupo.id,
-                email: ctx.email,
-                user_id: ctx.userId,
-                role: 'admin',
-                status: 'pending'
-            }).select().then(function(ir) {
-                if (ir.error) return { success: false, error: ir.error.message };
-                PENDING_SIGNUP = null;
-                return { success: true, grupo: grupo };
-            });
-        });
-    });
-}
-
-function getMyGroups() {
-    if (!AUTH.user) return [];
-    return supabaseClient.from('usuarios_grupo').select('grupo_id, grupos(nome, slug, logo_url), role, status').eq('user_id', AUTH.user.id).then(function(result) {
-        if (result.error) return [];
-        return (result.data || []).map(function(g) {
-            return { id: g.grupo_id, nome: g.grupos.nome, slug: g.grupos.slug, logo_url: g.grupos.logo_url, role: g.role, status: g.status };
-        });
-    }).catch(function() { return []; });
-}
-
-function getPendingRequests(groupId) {
-    return supabaseClient.from('usuarios_grupo').select('id, email, role, created_at').eq('grupo_id', groupId).eq('status', 'pending').then(function(result) {
-        if (result.error) return [];
-        return result.data || [];
-    }).catch(function() { return []; });
-}
-
-function approveUser(requestId) {
-    return supabaseClient.from('usuarios_grupo').update({ status: 'approved' }).eq('id', requestId).select().then(function(result) {
-        if (result.error) return { success: false, error: result.error.message };
-        return { success: true };
-    });
-}
-
-function rejectUser(requestId) {
-    return supabaseClient.from('usuarios_grupo').delete().eq('id', requestId).then(function(result) {
-        if (result.error) return { success: false, error: result.error.message };
-        return { success: true };
-    });
-}
-
-function onAuthStateChanged(user) {
+export function onAuthStateChanged(user) {
     var adminSection = document.getElementById('adminSection');
     if (user) {
         hideWaitingScreen();
@@ -234,10 +122,7 @@ function onAuthStateChanged(user) {
     }
 }
 
-/* Tela inicial: so login, sem listas nem dados de grupos. */
-var SYSTEM_LOGO = 'sorteador-logo.png';
-
-function resetHeaderGenerico() {
+export function resetHeaderGenerico() {
     var nomeEl = document.getElementById('nomeGrupo');
     var subEl = document.getElementById('subGrupo');
     var logoEl = document.getElementById('logoGrupo');
@@ -247,7 +132,7 @@ function resetHeaderGenerico() {
     document.title = 'Sorteador de Times';
 }
 
-function personalizarHeader(grupo) {
+export function personalizarHeader(grupo) {
     var nomeEl = document.getElementById('nomeGrupo');
     var subEl = document.getElementById('subGrupo');
     var logoEl = document.getElementById('logoGrupo');
@@ -257,35 +142,21 @@ function personalizarHeader(grupo) {
     document.title = grupo.nome + ' - Sorteador de Times';
 }
 
-function displayName() {
-    if (AUTH.user && AUTH.user.user_metadata && AUTH.user.user_metadata.display_name) return AUTH.user.user_metadata.display_name;
-    return AUTH.user ? AUTH.user.email : '';
+export function renderUserBar() {
+    var el = document.getElementById('userInfo');
+    if (el) el.textContent = displayName();
 }
 
-/* Grupos do usuario logado (para checar papel de owner). */
-var MEUS_GRUPOS = [];
-
-function isOwnerOf(grupoId) {
-    return MEUS_GRUPOS.some(function(g) { return g.id === grupoId && g.role === 'owner' && g.status === 'approved'; });
-}
-
-function toggleManageButton() {
-    var btn = document.getElementById('btnManageGroup');
-    if (!btn) return;
-    btn.style.display = (AUTH.user && grupoAtual && isOwnerOf(grupoAtual.id)) ? 'block' : 'none';
-}
-
-function loadApp() {
+export function loadApp() {
     getMyGroups().then(function(groups) {
-        MEUS_GRUPOS = groups || [];
-        var approved = groups.filter(function(g) { return g.status === 'approved'; });
-        var pending = groups.filter(function(g) { return g.status !== 'approved'; });
+        state.MEUS_GRUPOS = groups || [];
+        var approved = (groups || []).filter(function(g) { return g.status === 'approved'; });
+        var pending = (groups || []).filter(function(g) { return g.status !== 'approved'; });
         renderUserBar();
         var mainEl = document.getElementById('mainApp');
         if (approved.length === 0) {
             if (mainEl) mainEl.style.display = 'none';
             renderPendingPanel([]);
-            /* Com grupo pendente: tela de espera. Sem grupo nenhum: opcoes criar/entrar. */
             if (pending.length > 0) showWaitingScreen(pending);
             else showGroupChoice();
             return;
@@ -294,33 +165,27 @@ function loadApp() {
         hideWaitingScreen();
         renderGroupSelector(approved);
         carregarGrupo(approved[0].slug);
-        /* Owner e admin aprovam/recusam solicitacoes. */
         renderPendingPanel(approved);
     });
 }
 
-function showWaitingScreen(pending) {
+export function showWaitingScreen(pending) {
     var ls = document.getElementById('loginSection');
     if (!ls) return;
     var nome = displayName();
     var lista = pending.length
-        ? pending.map(function(g) { return '<li>' + g.nome + ' (' + g.slug + ') — aguardando aprovacao do owner</li>'; }).join('')
-        : '<li>Seu pedido foi registrado. Aguarde aprovacao do owner.</li>';
-    ls.innerHTML = '<div class="login-page"><div class="login-card"><img src="sorteador-logo.png" alt="Sorteador de Times" class="login-logo"><div class="login-header"><h2>Ola, ' + nome + '</h2><p>Seu acesso esta pendente</p></div><div class="login-body"><ul class="waiting-list">' + lista + '</ul><button class="btn-secondary" onclick="logout()">Sair</button></div></div></div>';
+        ? pending.map(function(g) { return '<li>' + g.nome + ' (' + g.slug + ') — aguardando aprovação do owner</li>'; }).join('')
+        : '<li>Seu pedido foi registrado. Aguarde aprovação do owner.</li>';
+    ls.innerHTML = '<div class="login-page"><div class="login-card"><img src="sorteador-logo.png" alt="Sorteador de Times" class="login-logo"><div class="login-header"><h2>Olá, ' + nome + '</h2><p>Seu acesso está pendente</p></div><div class="login-body"><ul class="waiting-list">' + lista + '</ul><button class="btn-secondary" onclick="logout()">Sair</button></div></div></div>';
     ls.style.display = 'block';
 }
 
-function hideWaitingScreen() {
+export function hideWaitingScreen() {
     var ls = document.getElementById('loginSection');
     if (ls) { ls.innerHTML = ''; ls.style.display = 'none'; }
 }
 
-function renderUserBar() {
-    var el = document.getElementById('userInfo');
-    if (el) el.textContent = displayName();
-}
-
-function renderPendingPanel(ownerGroups) {
+export function renderPendingPanel(ownerGroups) {
     var panel = document.getElementById('pendingPanel');
     if (!panel) return;
     if (!ownerGroups || !ownerGroups.length) { panel.innerHTML = ''; return; }
@@ -341,495 +206,7 @@ function renderPendingPanel(ownerGroups) {
     });
 }
 
-/* Gerenciamento do grupo (owner): nome + logo com upload para o Storage. */
-function escAttr(s) { return String(s == null ? '' : s).replace(/&/g, '&amp;').replace(/"/g, '&quot;').replace(/</g, '&lt;'); }
-
-function showManageGroup() {
-    if (!AUTH.user || !grupoAtual || !isOwnerOf(grupoAtual.id)) { alert('Apenas o owner pode gerenciar o grupo.'); return; }
-    var mainEl = document.getElementById('mainApp');
-    if (mainEl) mainEl.style.display = 'none';
-    window.LOGO_FILE = null;
-    var ls = document.getElementById('loginSection');
-    var logo = grupoAtual.logo_url || SYSTEM_LOGO;
-    ls.innerHTML = '<div class="login-page"><div class="login-card"><div class="login-header"><h2>Gerenciar Grupo</h2><p>Nome e logo do grupo</p></div><div class="login-body"><div id="manageGroupForm"><div style="text-align:center;margin-bottom:12px;"><img id="manageLogoPreview" src="' + escAttr(logo) + '" alt="Logo do grupo" style="max-width:120px;border-radius:12px;"></div><div class="form-group"><label for="manageGroupName">Nome do grupo</label><input type="text" id="manageGroupName" value="' + escAttr(grupoAtual.nome) + '"></div><div class="form-group"><label for="manageGroupLogo">Nova logo (URL ou arquivo)</label><input type="text" id="manageGroupLogo" value="" placeholder="Cole a URL ou escolha um arquivo"><input type="file" id="manageGroupLogoFile" accept="image/*" style="margin-top:8px;"></div><button class="btn-primary" onclick="doSaveGroup()">Salvar</button><p class="login-hint"><a href="#" onclick="onAuthStateChanged(AUTH.user); return false;">Voltar</a></p></div><div id="manageGroupLoading" style="display:none;"><p>Salvando...</p></div><div id="manageGroupStatus"></div><div class="pending-panel" style="margin-top:16px;"><h3>Solicitações pendentes</h3><div id="managePendingList"><p class="login-hint">Carregando...</p></div></div><div class="pending-panel" style="margin-top:16px;"><h3>Administradores</h3><div id="manageMembersList"><p class="login-hint">Carregando...</p></div></div><div class="danger-zone"><h3>Zona de perigo</h3><p class="login-hint">Exclui o grupo, os jogadores e os acessos. Não pode ser desfeita.</p><button class="btn-danger" onclick="doDeleteGroup()">Excluir grupo e jogadores</button></div></div></div></div>';
-    ls.style.display = 'block';
-    carregarPendentesManage();
-    carregarMembrosManage();
-    var fileInput = document.getElementById('manageGroupLogoFile');
-    if (fileInput) fileInput.addEventListener('change', function() {
-        var f = fileInput.files && fileInput.files[0];
-        if (!f) return;
-        window.LOGO_FILE = f;
-        var prev = document.getElementById('manageLogoPreview');
-        if (prev) prev.src = URL.createObjectURL(f);
-    });
-}
-
-function doSaveGroup() {
-    if (!AUTH.user || !grupoAtual || !isOwnerOf(grupoAtual.id)) { alert('Apenas o owner pode gerenciar o grupo.'); return; }
-    var nome = document.getElementById('manageGroupName').value.trim();
-    var logoTyped = document.getElementById('manageGroupLogo').value.trim();
-    if (!nome) { alert('Informe o nome do grupo.'); return; }
-    var formEl = document.getElementById('manageGroupForm');
-    var loadingEl = document.getElementById('manageGroupLoading');
-    var statusEl = document.getElementById('manageGroupStatus');
-    if (formEl) formEl.style.display = 'none';
-    if (loadingEl) loadingEl.style.display = 'block';
-    if (statusEl) statusEl.innerHTML = '';
-    var finish = function(finalLogo) {
-        window.LOGO_FILE = null;
-        supabaseClient.from('grupos').update({ nome: nome, logo_url: finalLogo }).eq('id', grupoAtual.id).select().then(function(r) {
-            if (loadingEl) loadingEl.style.display = 'none';
-            if (formEl) formEl.style.display = 'block';
-            if (r.error) {
-                if (statusEl) statusEl.innerHTML = '<p class="login-error">Erro: ' + r.error.message + '</p>';
-                return;
-            }
-            grupoAtual.nome = nome;
-            grupoAtual.logo_url = finalLogo;
-            personalizarHeader(grupoAtual);
-            if (statusEl) statusEl.innerHTML = '<p class="login-success">Grupo atualizado!</p>';
-            setTimeout(function() { onAuthStateChanged(AUTH.user); }, 1200);
-        });
-    };
-    if (window.LOGO_FILE) {
-        uploadLogo(window.LOGO_FILE).then(function(up) {
-            if (!up.success) {
-                if (loadingEl) loadingEl.style.display = 'none';
-                if (formEl) formEl.style.display = 'block';
-                if (statusEl) statusEl.innerHTML = '<p class="login-error">Erro no upload da logo: ' + up.error + '</p>';
-                return;
-            }
-            finish(up.url);
-        });
-    } else {
-        /* Campo vazio e sem arquivo: mantem a logo atual. */
-        finish(logoTyped || grupoAtual.logo_url || SYSTEM_LOGO);
-    }
-}
-
-/* Esteira de aprovacao dentro do Gerenciar grupo (grava no banco). */
-function carregarPendentesManage() {
-    var box = document.getElementById('managePendingList');
-    if (!box || !grupoAtual) return;
-    box.innerHTML = '<p class="login-hint">Carregando...</p>';
-    getPendingRequests(grupoAtual.id).then(function(reqs) {
-        if (!reqs || !reqs.length) { box.innerHTML = '<p class="login-hint">Nenhuma solicitação pendente.</p>'; return; }
-        box.innerHTML = reqs.map(function(p) {
-            return '<div class="pending-item"><span class="pending-email">' + escAttr(p.email) + '</span><span class="pending-actions"><button class="btn-success btn-compact" onclick="doApproveManage(\'' + p.id + '\')">Aprovar</button> <button class="btn-secondary btn-compact" onclick="doRejectManage(\'' + p.id + '\')">Recusar</button></span></div>';
-        }).join('');
-    });
-}
-
-function doApproveManage(requestId) {
-    approveUser(requestId).then(function(r) {
-        if (!r.success) { alert('Erro: ' + r.error); return; }
-        carregarPendentesManage();
-    });
-}
-
-function doRejectManage(requestId) {
-    if (!confirm('Recusar este pedido?')) return;
-    rejectUser(requestId).then(function(r) {
-        if (!r.success) { alert('Erro: ' + r.error); return; }
-        carregarPendentesManage();
-    });
-}
-
-/* Membros do grupo (owner): lista admins e remove acesso. */
-function getGroupMembers(groupId) {
-    return supabaseClient.from('usuarios_grupo').select('id, email, role, status').eq('grupo_id', groupId).eq('status', 'approved').order('role').then(function(r) {
-        if (r.error) return [];
-        return r.data || [];
-    }).catch(function() { return []; });
-}
-
-function carregarMembrosManage() {
-    var box = document.getElementById('manageMembersList');
-    if (!box || !grupoAtual) return;
-    box.innerHTML = '<p class="login-hint">Carregando...</p>';
-    getGroupMembers(grupoAtual.id).then(function(members) {
-        if (!members.length) { box.innerHTML = '<p class="login-hint">Nenhum membro.</p>'; return; }
-        box.innerHTML = members.map(function(m) {
-            var tag = m.role === 'owner' ? '<span class="admin-badge">owner</span>' : '<span class="admin-badge">admin</span>';
-            var btn = m.role === 'owner' ? '' : ' <button class="btn-secondary btn-compact" onclick="doRemoveAdmin(\'' + m.id + '\', \'' + escAttr(m.email) + '\')">Remover</button>';
-            return '<div class="pending-item"><span class="pending-email">' + escAttr(m.email) + ' ' + tag + '</span><span class="pending-actions">' + btn + '</span></div>';
-        }).join('');
-    });
-}
-
-function doRemoveAdmin(membershipId, email) {
-    if (!confirm('Remover "' + email + '" do grupo?')) return;
-    supabaseClient.from('usuarios_grupo').delete().eq('id', membershipId).then(function(r) {
-        if (r.error) { alert('Erro: ' + r.error.message); return; }
-        carregarMembrosManage();
-    });
-}
-
-/* Owner: exclui grupo + jogadores + acessos (cascade) e recarrega. */
-function doDeleteGroup() {
-    if (!AUTH.user || !grupoAtual || !isOwnerOf(grupoAtual.id)) { alert('Apenas o owner pode excluir o grupo.'); return; }
-    if (!confirm('Excluir o grupo "' + grupoAtual.nome + '" e TODOS os jogadores?')) return;
-    if (!confirm('Confirme novamente: exclusão definitiva.')) return;
-    supabaseClient.from('grupos').delete().eq('id', grupoAtual.id).then(function(r) {
-        if (r.error) { alert('Erro: ' + r.error.message); return; }
-        location.reload();
-    });
-}
-
-function doApprove(requestId) {    approveUser(requestId).then(function(r) {
-        if (!r.success) { alert('Erro: ' + r.error); return; }
-        loadApp();
-    });
-}
-
-function doReject(requestId) {
-    if (!confirm('Recusar este pedido?')) return;
-    rejectUser(requestId).then(function(r) {
-        if (!r.success) { alert('Erro: ' + r.error); return; }
-        loadApp();
-    });
-}
-
-function renderGroupSelector(groups) {
-    var container = document.getElementById('groupSelector');
-    if (!container || groups.length <= 1) { if (container) container.innerHTML = ''; return; }
-    container.innerHTML = '<select id="grupoSelect" onchange="mudarGrupo(this.value)">' +
-        groups.map(function(g) { return '<option value="' + g.slug + '">' + g.nome + '</option>'; }).join('') + '</select>';
-}
-
-function mudarGrupo(slug) { carregarGrupo(slug, true); }
-
-function carregarGrupo(slug, personalizar) {
-    supabaseClient.from('grupos').select('id, nome, slug, logo_url').eq('slug', slug).single().then(function(result) {
-        if (result.error || !result.data) {
-            if (personalizar !== false) alert('Grupo nao encontrado');
-            else console.warn('Grupo publico nao encontrado:', slug);
-            return;
-        }
-        grupoAtual = result.data;
-        /* Personaliza header só para admin/owner logado; visitante vê o generico. */
-        if (personalizar !== false && AUTH.user) personalizarHeader(grupoAtual);
-        else { grupoAtual.nome = 'Sorteador de Times'; grupoAtual.logo_url = grupoAtual.logo_url || SYSTEM_LOGO; }
-        toggleManageButton();
-        carregarJogadores(grupoAtual.id);
-    }).catch(function(err) { console.error('Erro ao carregar grupo:', err); });
-}
-
-function carregarJogadores(grupoId) {
-    supabaseClient.from('jogadores').select('*').eq('grupo_id', grupoId).order('nome').then(function(result) {
-        if (result.error) throw result.error;
-        jogadores = (result.data || []).map(function(j) { return Object.assign({}, j, { presente: false }); });
-        renderLista();
-    }).catch(function(err) { console.error('Erro ao carregar jogadores:', err); });
-}
-
-var jogadores = [];
-
-function renderLista() {
-    var listaEl = document.getElementById('listaJogadores');
-    if (!listaEl) return;
-    listaEl.innerHTML = '';
-    jogadores.forEach(function(j, index) {
-        var div = document.createElement('div');
-        div.className = 'jogador';
-        var label = document.createElement('label');
-        var checkbox = document.createElement('input');
-        checkbox.type = 'checkbox';
-        checkbox.dataset.index = index;
-        checkbox.checked = j.presente;
-        var infoDiv = document.createElement('div');
-        infoDiv.className = 'jogador-info';
-        var strong = document.createElement('strong');
-        strong.textContent = j.nome;
-        var metaDiv = document.createElement('div');
-        metaDiv.className = 'jogador-meta';
-        if (j.goleiro) { metaDiv.textContent = 'Goleiro'; } else { metaDiv.textContent = j.categoria.toFixed(1); }
-        if (j.menina) { var ms = document.createElement('em'); ms.className = 'tag-menina'; ms.textContent = ' mulher'; metaDiv.appendChild(ms); }
-        if (j.convidado) { var cs = document.createElement('em'); cs.className = 'tag-convidado'; cs.textContent = ' convidado'; metaDiv.appendChild(cs); }
-        infoDiv.appendChild(strong); infoDiv.appendChild(metaDiv);
-        label.appendChild(checkbox); label.appendChild(infoDiv);
-        div.appendChild(label);
-        var actions = document.createElement('div');
-        actions.className = 'jogador-actions';
-        var btnEdit = document.createElement('button');
-        btnEdit.type = 'button';
-        btnEdit.className = 'btn-mini';
-        btnEdit.textContent = 'Editar';
-        btnEdit.dataset.index = index;
-        var btnDel = document.createElement('button');
-        btnDel.type = 'button';
-        btnDel.className = 'btn-mini btn-mini-danger';
-        btnDel.textContent = 'Excluir';
-        btnDel.dataset.index = index;
-        actions.appendChild(btnEdit); actions.appendChild(btnDel);
-        div.appendChild(actions); listaEl.appendChild(div);
-        checkbox.addEventListener('change', function() {
-            jogadores[parseInt(this.dataset.index)].presente = this.checked;
-            atualizarContador();
-        });
-        btnEdit.addEventListener('click', function() { editarJogador(parseInt(this.dataset.index)); });
-        btnDel.addEventListener('click', function() { removerJogador(parseInt(this.dataset.index)); });
-    });
-    var limEl = document.getElementById('limiteJogadores');
-    if (limEl) limEl.textContent = jogadores.length + ' de 150 jogadores';
-    atualizarContador();
-}
-
-var LIMITE_JOGADORES = 150;
-
-function atingiuLimite() {
-    if (jogadores.length >= LIMITE_JOGADORES) { alert('Limite de 150 jogadores atingido.'); return true; }
-    return false;
-}
-
-/* Payload só com colunas da tabela (sem flags locais como presente). */
-function payloadJogador(j) {
-    return { grupo_id: j.grupo_id, nome: j.nome, categoria: j.categoria, goleiro: !!j.goleiro, menina: !!j.menina, convidado: !!j.convidado };
-}
-
-function limparFormFixo() {
-    document.getElementById('fixoNome').value = '';
-    document.getElementById('fixoTipo').value = 'linha';
-    document.getElementById('fixoCategoria').value = '3';
-    document.getElementById('fixoMenina').checked = false;
-}
-
-function adicionarJogadorFixo() {
-    if (!AUTH.user) { alert('Entre com sua conta para incluir jogadores.'); return; }
-    if (!grupoAtual) { alert('Aguarde carregar os jogadores.'); return; }
-    if (atingiuLimite()) return;
-    var nome = document.getElementById('fixoNome').value.trim();
-    var tipo = document.getElementById('fixoTipo').value;
-    var categoria = parseFloat(document.getElementById('fixoCategoria').value);
-    var menina = document.getElementById('fixoMenina').checked;
-    if (!nome) { alert('Informe o nome do jogador.'); return; }
-    var jogador = { nome: nome, categoria: categoria, goleiro: tipo === 'goleiro', presente: false, convidado: false, menina: menina, grupo_id: grupoAtual.id };
-    supabaseClient.from('jogadores').insert(payloadJogador(jogador)).select().then(function(result) {
-        if (result.error) throw result.error;
-        jogador.id = result.data[0].id;
-        jogadores.push(jogador);
-        jogadores.sort(function(a, b) { return a.nome.localeCompare(b.nome); });
-        renderLista();
-        limparFormFixo();
-    }).catch(function(err) { alert('Erro ao incluir: ' + err.message); });
-}
-
-function editarJogador(index) {
-    var j = jogadores[index];
-    if (!j) return;
-    if (!AUTH.user) { alert('Entre com sua conta para editar jogadores.'); return; }
-    window.EDIT_INDEX = index;
-    var modal = document.getElementById('playerModal');
-    var cats = ['0', '0.5', '1', '1.5', '2', '2.5', '3', '3.5', '4', '4.5', '5'].map(function(c) {
-        return '<option value="' + c + '"' + (parseFloat(c) === parseFloat(j.categoria) ? ' selected' : '') + '>' + c + '</option>';
-    }).join('');
-    modal.innerHTML = '<div class="player-modal-overlay" onclick="if(event.target===this)fecharModalJogador()"><div class="player-modal"><h3>Editar jogador</h3><div class="form-group"><label for="editNome">Nome</label><input type="text" id="editNome" value="' + escAttr(j.nome) + '" autocomplete="off"></div><div class="form-row"><div class="form-group"><label for="editTipo">Tipo</label><select id="editTipo"><option value="linha"' + (j.goleiro ? '' : ' selected') + '>Linha</option><option value="goleiro"' + (j.goleiro ? ' selected' : '') + '>Goleiro</option></select></div><div class="form-group"><label for="editCategoria">Categoria</label><select id="editCategoria">' + cats + '</select></div></div><div class="form-group form-check"><label><input type="checkbox" id="editMenina"' + (j.menina ? ' checked' : '') + '> Menina (times separados)</label></div><div class="player-modal-row"><button class="btn-secondary" onclick="fecharModalJogador()">Cancelar</button><button class="btn-primary" onclick="salvarEdicaoJogador()">Salvar</button></div></div></div>';
-}
-
-function fecharModalJogador() {
-    var modal = document.getElementById('playerModal');
-    if (modal) modal.innerHTML = '';
-    window.EDIT_INDEX = null;
-}
-
-function salvarEdicaoJogador() {
-    var index = window.EDIT_INDEX;
-    var j = jogadores[index];
-    if (j == null || !j) { fecharModalJogador(); return; }
-    var nome = document.getElementById('editNome').value.trim();
-    var tipo = document.getElementById('editTipo').value;
-    var categoria = parseFloat(document.getElementById('editCategoria').value);
-    var menina = document.getElementById('editMenina').checked;
-    if (!nome) { alert('Informe o nome do jogador.'); return; }
-    var patch = { nome: nome, categoria: categoria, goleiro: tipo === 'goleiro', menina: menina };
-    supabaseClient.from('jogadores').update(patch).eq('id', j.id).select().then(function(result) {
-        if (result.error) throw result.error;
-        jogadores[index] = Object.assign({}, j, patch);
-        jogadores.sort(function(a, b) { return a.nome.localeCompare(b.nome); });
-        renderLista();
-        fecharModalJogador();
-    }).catch(function(err) { alert('Erro ao salvar: ' + err.message); });
-}
-
-function removerJogador(index) {
-    var j = jogadores[index];
-    if (!j) return;
-    if (!AUTH.user) { alert('Entre com sua conta para remover jogadores.'); return; }
-    if (!confirm('Remover "' + j.nome + '" da lista?')) return;
-    supabaseClient.from('jogadores').delete().eq('id', j.id).then(function(result) {
-        if (result.error) { alert('Erro ao remover: ' + result.error.message); return; }
-        location.reload();
-    });
-}
-
-function getPresentes() {
-    var linhas = jogadores.filter(function(j) { return j.presente && !j.goleiro; });
-    var goleiros = jogadores.filter(function(j) { return j.presente && j.goleiro; });
-    return { linhas: linhas, goleiros: goleiros };
-}
-
-function timeComMenina(time) { return time.jogadores.some(function(j) { return j.menina; }); }
-
-function sortearTimes(linhas, goleiros, porTime) {
-    var total = linhas.length + goleiros.length;
-    var qtdTimes = Math.ceil(total / porTime);
-    if (qtdTimes < 1) { alert('E necessario pelo menos 1 jogador'); return null; }
-    if (qtdTimes === 1 && total < 2) { alert('E necessario pelo menos 2 jogadores'); return null; }
-    var meninasPresentes = linhas.filter(function(j) { return j.menina; });
-    if (meninasPresentes.length > qtdTimes) { alert('Ha ' + meninasPresentes.length + ' mulheres e apenas ' + qtdTimes + ' time(s).'); return null; }
-    var times = [];
-    for (var i = 0; i < qtdTimes; i++) { times.push({ nome: 'Time ' + (i + 1), jogadores: [], forca: 0 }); }
-    goleiros.forEach(function(g, i) { times[i % times.length].jogadores.push(g); });
-    var ordenados = linhas.slice().sort(function() { return Math.random() - 0.5; }).sort(function(a, b) { return b.categoria - a.categoria; });
-    for (var j = 0; j < ordenados.length; j++) {
-        var jogador = ordenados[j];
-        var candidatos = times.filter(function(t) { if (jogador.menina && timeComMenina(t)) return false; return t.jogadores.length < porTime; }).sort(function(a, b) { return a.forca - b.forca; });
-        if (candidatos.length > 0) { candidatos[0].jogadores.push(jogador); candidatos[0].forca += jogador.categoria; continue; }
-        var overflow = times.filter(function(t) { return !jogador.menina || !timeComMenina(t); }).sort(function(a, b) { return a.forca - b.forca; });
-        if (overflow.length === 0) { alert('Nao foi possivel separar ' + jogador.nome); return null; }
-        overflow[0].jogadores.push(jogador); overflow[0].forca += jogador.categoria;
-    }
-    times.sort(function(a, b) { return b.jogadores.length - a.jogadores.length; });
-    times.forEach(function(t, idx) { t.nome = 'Time ' + (idx + 1); });
-    return times;
-}
-
-function renderResultado(times) {
-    var resultadoEl = document.getElementById('resultado');
-    if (!resultadoEl) return;
-    resultadoEl.innerHTML = '';
-    var imagemContainer = document.createElement('div');
-    imagemContainer.id = 'imagemResultado';
-    var header = document.createElement('div');
-    header.className = 'resultado-header';
-    header.innerHTML = '<img src="' + (grupoAtual.logo_url || SYSTEM_LOGO) + '" alt="' + grupoAtual.nome + '" class="resultado-logo" width="56" height="56"><div class="resultado-header-text"><h1>' + grupoAtual.nome + '</h1></div>';
-    imagemContainer.appendChild(header);
-    var grid = document.createElement('div');
-    grid.className = 'times-grid';
-    times.forEach(function(t) {
-        var div = document.createElement('div');
-        div.className = 'time';
-        var html = '<h3>' + t.nome + '</h3>';
-        t.jogadores.forEach(function(j) {
-            if (j.goleiro) html += '<div class="goleiro">🧤 <strong><em>' + j.nome + '</em></strong></div>';
-            else if (j.menina) html += '<div class="menina">🌸 <strong><em>' + j.nome + '</em></strong></div>';
-            else html += '<div>' + j.nome + '</div>';
-        });
-        div.innerHTML = html;
-        grid.appendChild(div);
-    });
-    imagemContainer.appendChild(grid);
-    var footer = document.createElement('div');
-    footer.className = 'resultado-footer';
-    var agora = new Date();
-    var dataHora = agora.toLocaleDateString('pt-BR') + ' ' + agora.toLocaleTimeString('pt-BR', { hour: '2-digit', minute: '2-digit' });
-    footer.innerHTML = '<span>' + dataHora + '</span>';
-    imagemContainer.appendChild(footer);
-    resultadoEl.appendChild(imagemContainer);
-}
-
-function getPorTime() {
-    var el = document.querySelector('input[name="jogadoresPorTime"]:checked');
-    return el ? Number(el.value) : 6;
-}
-
-function realizarSorteio() {
-    var p = getPresentes();
-    var t = sortearTimes(p.linhas, p.goleiros, getPorTime());
-    if (!t) return;
-    renderResultado(t);
-    var btnR = document.getElementById('btnResortear');
-    var btnC = document.getElementById('btnCompartilhar');
-    if (btnR) btnR.style.display = 'block';
-    if (btnC) btnC.style.display = 'block';
-    window.timesAtuais = t;
-    document.getElementById('resultadoContainer').scrollIntoView({ behavior: 'smooth', block: 'start' });
-}
-
-function adicionarConvidado() {
-    if (!AUTH.user) { alert('Entre com sua conta para adicionar convidados.'); return; }
-    if (!grupoAtual) { alert('Aguarde carregar os jogadores.'); return; }
-    if (atingiuLimite()) return;
-    var nome = document.getElementById('convidadoNome').value.trim();
-    var tipo = document.getElementById('convidadoTipo').value;
-    var categoria = parseFloat(document.getElementById('convidadoCategoria').value);
-    if (!nome) { alert('Informe o nome do convidado.'); return; }
-    var menina = document.getElementById('convidadoMenina').checked;
-    var convidado = { nome: nome, categoria: categoria, goleiro: tipo === 'goleiro', presente: true, convidado: true, menina: menina, grupo_id: grupoAtual.id };
-    salvarJogadorNoSupabase(convidado);
-}
-
-function salvarJogadorNoSupabase(jogador) {
-    if (!AUTH.user) { alert('Acesso negado.'); return; }
-    supabaseClient.from('usuarios_grupo').select('id').eq('grupo_id', jogador.grupo_id).eq('user_id', AUTH.user.id).single().then(function(r) {
-        if (!r.data) { alert('Voce nao tem permissao para este grupo.'); return; }
-        supabaseClient.from('jogadores').insert(payloadJogador(jogador)).select().then(function(result) {
-            if (result.error) throw result.error;
-            jogador.id = result.data[0].id;
-            jogadores.push(jogador);
-            jogadores.sort(function(a, b) { return a.nome.localeCompare(b.nome); });
-            renderLista();
-            document.getElementById('convidadoNome').value = '';
-            document.getElementById('convidadoMenina').checked = false;
-        }).catch(function(err) { alert('Erro ao salvar: ' + err.message); });
-    }).catch(function() { alert('Voce nao tem permissao para este grupo.'); });
-}
-
-function desmarcarTodos() {
-    jogadores.forEach(function(j) { j.presente = false; });
-    document.querySelectorAll('input[type=checkbox]').forEach(function(cb) { cb.checked = false; });
-    atualizarContador();
-}
-
-function atualizarContador() {
-    var total = jogadores.filter(function(j) { return j.presente; }).length;
-    var el = document.getElementById('contadorSelecionados');
-    if (el) el.textContent = total + ' selecionado' + (total !== 1 ? 's' : '');
-}
-
-function compartilharImagem() {
-    var el = document.getElementById('imagemResultado');
-    if (!el) return;
-    var originalFont = el.style.fontFamily;
-    el.style.fontFamily = 'Arial, Helvetica, sans-serif';
-    document.fonts.ready.then(function() {
-        html2canvas(el, { scale: 2, useCORS: true, backgroundColor: '#f4f4f4' }).then(function(canvas) {
-            el.style.fontFamily = originalFont;
-            canvas.toBlob(function(blob) {
-                var agora = new Date();
-                var pad = function(n) { return (n < 10 ? '0' : '') + n; };
-                var stamp = agora.getFullYear() + pad(agora.getMonth() + 1) + pad(agora.getDate()) + '-' + pad(agora.getHours()) + pad(agora.getMinutes());
-                var file = new File([blob], 'times-' + stamp + '.png', { type: 'image/png' });
-                if (navigator.share) { navigator.share({ title: grupoAtual.nome, text: 'Times da pelada', files: [file] }); }
-                else { alert('Compartilhamento nao suportado.'); }
-            });
-        });
-    });
-}
-
-function loginWithEmail(email, password) {
-    AUTH.loading = true;
-    return supabaseClient.auth.signInWithPassword({ email: email.trim(), password: password }).then(function(result) {
-        if (result.error) {
-            var msg = (result.error.message || '').toLowerCase();
-            if (msg.indexOf('invalid login credentials') >= 0 || msg.indexOf('invalid') >= 0) {
-                return { success: false, notFound: true, error: 'E-mail nao encontrado.' };
-            }
-            return { success: false, error: result.error.message };
-        }
-        return { success: true, message: 'Logado com sucesso!' };
-    }).finally(function() { AUTH.loading = false; });
-}
-
-function logout() {
-    PENDING_SIGNUP = null;
-    window.LOGO_FILE = null;
-    window.JOIN_SLUG = null;
-    supabaseClient.auth.signOut().then(function() { AUTH.user = null; AUTH.session = null; onAuthStateChanged(null); }).catch(function(err) { console.error('Erro ao logout:', err); });
-}
-
-function renderLoginScreen() {
+export function renderLoginScreen() {
     var ls = document.getElementById('loginSection');
     if (!ls) return;
     var mainEl = document.getElementById('mainApp');
@@ -837,79 +214,57 @@ function renderLoginScreen() {
     if (mainEl) mainEl.style.display = 'none';
     if (adminSection) adminSection.style.display = 'none';
     resetHeaderGenerico();
-    ls.innerHTML = '<div class="login-page"><div class="login-card"><img src="sorteador-logo.png" alt="Sorteador de Times" class="login-logo"><div class="login-header"><h2>Sorteador de Times</h2><p>Area do organizador</p></div><div class="login-body"><form id="loginForm" onsubmit="doLogin(); return false;"><div class="form-group"><label for="loginEmail">Seu e-mail</label><input type="email" id="loginEmail" placeholder="seu@email.com" autocomplete="email"></div><div class="form-group"><label for="loginPassword">Sua senha</label><input type="password" id="loginPassword" placeholder="Sua senha" autocomplete="current-password"></div><button id="btnLogin" class="btn-primary" type="submit">Entrar</button><p id="loginSwitchText" class="login-hint"><a href="#" onclick="showSignupForm(); return false;">Nao tem conta? Cadastre-se</a></p></form><div id="loginLoading" style="display:none;"><p>Entrando...</p></div><div id="loginStatus"></div></div></div></div>';
+    ls.innerHTML = '<div class="login-page"><div class="login-card"><img src="sorteador-logo.png" alt="Sorteador de Times" class="login-logo"><div class="login-header"><h2>Sorteador de Times</h2><p>Área do organizador</p></div><div class="login-body"><form id="loginForm" onsubmit="doLogin(); return false;"><div class="form-group"><label for="loginEmail">Seu e-mail</label><input type="email" id="loginEmail" placeholder="seu@email.com" autocomplete="email"></div><div class="form-group"><label for="loginPassword">Sua senha</label><input type="password" id="loginPassword" placeholder="Sua senha" autocomplete="current-password"></div><button id="btnLogin" class="btn-primary" type="submit">Entrar</button><p id="loginSwitchText" class="login-hint"><a href="#" onclick="showSignupForm(); return false;">Não tem conta? Cadastre-se</a></p></form><div id="loginLoading" style="display:none;"><p>Entrando...</p></div><div id="loginStatus"></div></div></div></div>';
     ls.style.display = 'block';
 }
 
-/* Cadastro: cria o usuario no Supabase Auth e oferece Criar grupo / Entrar em grupo */
-function showSignupForm(prefillEmail) {
+export function showSignupForm(prefillEmail) {
     var ls = document.getElementById('loginSection');
     if (!ls) return;
-    ls.innerHTML = '<div class="login-page"><div class="login-card"><img src="sorteador-logo.png" alt="Sorteador de Times" class="login-logo"><div class="login-header"><h2>Criar conta</h2><p>Primeiro, crie seu usuario</p></div><div class="login-body"><div id="signupForm"><div class="form-group"><label for="signupUsername">Nome de usuario</label><input type="text" id="signupUsername" placeholder="Seu nome" autocomplete="nickname"></div><div class="form-group"><label for="signupEmail">Seu e-mail</label><input type="email" id="signupEmail" placeholder="seu@email.com" autocomplete="email" value="' + (prefillEmail || '') + '"></div><div class="form-group"><label for="signupPassword">Senha</label><input type="password" id="signupPassword" placeholder="Minimo 6 caracteres" autocomplete="new-password"></div><button class="btn-primary" onclick="doSignup()">Criar conta</button><p class="login-hint"><a href="#" onclick="renderLoginScreen(); return false;">Ja tenho conta</a></p></div><div id="signupLoading" style="display:none;"><p>Criando...</p></div><div id="signupStatus"></div></div></div></div>';
+    ls.innerHTML = '<div class="login-page"><div class="login-card"><img src="sorteador-logo.png" alt="Sorteador de Times" class="login-logo"><div class="login-header"><h2>Criar conta</h2><p>Primeiro, crie seu usuário</p></div><div class="login-body"><div id="signupForm"><div class="form-group"><label for="signupUsername">Nome de usuário</label><input type="text" id="signupUsername" placeholder="Seu nome" autocomplete="nickname"></div><div class="form-group"><label for="signupEmail">Seu e-mail</label><input type="email" id="signupEmail" placeholder="seu@email.com" autocomplete="email" value="' + (prefillEmail || '') + '"></div><div class="form-group"><label for="signupPassword">Senha</label><input type="password" id="signupPassword" placeholder="Mínimo 6 caracteres" autocomplete="new-password"></div><button class="btn-primary" onclick="doSignup()">Criar conta</button><p class="login-hint"><a href="#" onclick="renderLoginScreen(); return false;">Já tenho conta</a></p></div><div id="signupLoading" style="display:none;"><p>Criando...</p></div><div id="signupStatus"></div></div></div></div>';
     ls.style.display = 'block';
 }
 
-function showGroupChoice() {
+export function showGroupChoice() {
     var ls = document.getElementById('loginSection');
-    if (!ls || !AUTH.user) { renderLoginScreen(); return; }
-    var name = PENDING_SIGNUP ? PENDING_SIGNUP.username : displayName();
+    if (!ls || !state.AUTH.user) { renderLoginScreen(); return; }
+    var name = state.PENDING_SIGNUP ? state.PENDING_SIGNUP.username : displayName();
     var mainEl = document.getElementById('mainApp');
     if (mainEl) mainEl.style.display = 'none';
-    ls.innerHTML = '<div class="login-page"><div class="login-card"><img src="sorteador-logo.png" alt="Sorteador de Times" class="login-logo"><div class="login-header"><h2>Ola, ' + name + '</h2><p>Voce ainda nao tem grupo. Escolha uma opcao:</p></div><div class="login-body"><div id="newUserForm"><button class="btn-primary" onclick="showCreateGroup()">Criar grupo</button><button class="btn-secondary" onclick="showJoinGroup()">Entrar em grupo</button><p class="login-hint"><a href="#" onclick="logout(); return false;">Sair</a></p></div></div></div></div>';
+    ls.innerHTML = '<div class="login-page"><div class="login-card"><img src="sorteador-logo.png" alt="Sorteador de Times" class="login-logo"><div class="login-header"><h2>Olá, ' + name + '</h2><p>Você ainda não tem grupo. Escolha uma opção:</p></div><div class="login-body"><div id="newUserForm"><button class="btn-primary" onclick="showCreateGroup()">Criar grupo</button><button class="btn-secondary" onclick="showJoinGroup()">Entrar em grupo</button><p class="login-hint"><a href="#" onclick="logout(); return false;">Sair</a></p></div></div></div></div>';
     ls.style.display = 'block';
 }
 
-function showCreateGroup() {
+export function showCreateGroup() {
     var ls = document.getElementById('loginSection');
     if (!ls) return;
-    var email = PENDING_SIGNUP ? PENDING_SIGNUP.email : (AUTH.user ? AUTH.user.email : '');
-    var username = PENDING_SIGNUP ? PENDING_SIGNUP.username : (displayName() || '');
-    ls.innerHTML = '<div class="login-page"><div class="login-card"><img src="sorteador-logo.png" alt="Sorteador de Times" class="login-logo"><div class="login-header"><h2>Criar Grupo</h2><p>Voce sera o owner do grupo</p></div><div class="login-body"><div id="createGroupForm"><div class="form-group"><label for="groupName">Nome do grupo</label><input type="text" id="groupName" placeholder="Ex: Boleiros de Cristo"></div><div class="form-group"><label for="groupLogo">Logo (URL ou arquivo)</label><input type="text" id="groupLogo" placeholder="URL da logo (opcional)"><input type="file" id="groupLogoFile" accept="image/*" style="margin-top:8px;"><img id="groupLogoPreview" style="display:none;max-width:96px;margin-top:8px;border-radius:8px;"></div><div class="form-group"><label for="newUsername">Seu nome de usuario</label><input type="text" id="newUsername" placeholder="Seu nome" value="' + username + '"></div><div class="form-group"><label for="newEmail">Seu e-mail</label><input type="email" id="newEmail" placeholder="seu@email.com" value="' + email + '"></div><div class="form-group"><label for="newPassword">Senha</label><input type="password" id="newPassword" placeholder="Sua senha"></div><button class="btn-primary" onclick="doCreateGroup()">Criar Grupo</button><p class="login-hint"><a href="#" onclick="showGroupChoice(); return false;">Voltar</a></p></div><div id="createGroupLoading" style="display:none;"><p>Criando...</p></div><div id="createGroupStatus"></div></div></div></div>';
+    var email = state.PENDING_SIGNUP ? state.PENDING_SIGNUP.email : (state.AUTH.user ? state.AUTH.user.email : '');
+    var username = state.PENDING_SIGNUP ? state.PENDING_SIGNUP.username : (displayName() || '');
+    ls.innerHTML = '<div class="login-page"><div class="login-card"><img src="sorteador-logo.png" alt="Sorteador de Times" class="login-logo"><div class="login-header"><h2>Criar Grupo</h2><p>Você será o owner do grupo</p></div><div class="login-body"><div id="createGroupForm"><div class="form-group"><label for="groupName">Nome do grupo</label><input type="text" id="groupName" placeholder="Ex: Boleiros de Cristo"></div><div class="form-group"><label for="groupLogo">Logo (URL ou arquivo)</label><input type="text" id="groupLogo" placeholder="URL da logo (opcional)"><input type="file" id="groupLogoFile" accept="image/*" style="margin-top:8px;"><img id="groupLogoPreview" style="display:none;max-width:96px;margin-top:8px;border-radius:8px;"></div><div class="form-group"><label for="newUsername">Seu nome de usuário</label><input type="text" id="newUsername" placeholder="Seu nome" value="' + username + '"></div><div class="form-group"><label for="newEmail">Seu e-mail</label><input type="email" id="newEmail" placeholder="seu@email.com" value="' + email + '"></div><div class="form-group"><label for="newPassword">Senha</label><input type="password" id="newPassword" placeholder="Sua senha"></div><button class="btn-primary" onclick="doCreateGroup()">Criar Grupo</button><p class="login-hint"><a href="#" onclick="showGroupChoice(); return false;">Voltar</a></p></div><div id="createGroupLoading" style="display:none;"><p>Criando...</p></div><div id="createGroupStatus"></div></div></div></div>';
     var fileInput = document.getElementById('groupLogoFile');
     if (fileInput) fileInput.addEventListener('change', function() {
         var f = fileInput.files && fileInput.files[0];
         var prev = document.getElementById('groupLogoPreview');
-        if (!f) { window.LOGO_FILE = null; if (prev) prev.style.display = 'none'; return; }
-        window.LOGO_FILE = f;
+        if (!f) { state.LOGO_FILE = null; if (prev) prev.style.display = 'none'; return; }
+        state.LOGO_FILE = f;
         if (prev) { prev.src = URL.createObjectURL(f); prev.style.display = 'block'; }
     });
 }
 
-function showJoinGroup() {
+export function showJoinGroup() {
     var ls = document.getElementById('loginSection');
     if (!ls) return;
-    var email = PENDING_SIGNUP ? PENDING_SIGNUP.email : (AUTH.user ? AUTH.user.email : '');
-    var username = PENDING_SIGNUP ? PENDING_SIGNUP.username : (displayName() || '');
-    ls.innerHTML = '<div class="login-page"><div class="login-card"><img src="sorteador-logo.png" alt="Sorteador de Times" class="login-logo"><div class="login-header"><h2>Entrar em Grupo</h2><p>O owner precisa aprovar seu pedido</p></div><div class="login-body"><div id="joinGroupForm"><div class="form-group"><label for="joinUsername">Seu nome de usuario</label><input type="text" id="joinUsername" placeholder="Seu nome" value="' + username + '"></div><div class="form-group"><label for="joinEmail">Seu e-mail</label><input type="email" id="joinEmail" placeholder="seu@email.com" value="' + email + '"></div><div class="form-group"><label for="joinPassword">Sua senha</label><input type="password" id="joinPassword" placeholder="Sua senha"></div><div class="form-group"><label>Escolha o grupo</label><div id="joinGroupList"><p class="login-hint">Carregando grupos...</p></div></div><button class="btn-primary" onclick="doJoinGroup()">Pedir acesso</button><p class="login-hint"><a href="#" onclick="showGroupChoice(); return false;">Voltar</a></p></div><div id="joinGroupLoading" style="display:none;"><p>Solicitando...</p></div><div id="joinGroupStatus"></div></div></div></div>';
-    window.JOIN_SLUG = null;
+    var email = state.PENDING_SIGNUP ? state.PENDING_SIGNUP.email : (state.AUTH.user ? state.AUTH.user.email : '');
+    var username = state.PENDING_SIGNUP ? state.PENDING_SIGNUP.username : (displayName() || '');
+    ls.innerHTML = '<div class="login-page"><div class="login-card"><img src="sorteador-logo.png" alt="Sorteador de Times" class="login-logo"><div class="login-header"><h2>Entrar em Grupo</h2><p>O owner precisa aprovar seu pedido</p></div><div class="login-body"><div id="joinGroupForm"><div class="form-group"><label for="joinUsername">Seu nome de usuário</label><input type="text" id="joinUsername" placeholder="Seu nome" value="' + username + '"></div><div class="form-group"><label for="joinEmail">Seu e-mail</label><input type="email" id="joinEmail" placeholder="seu@email.com" value="' + email + '"></div><div class="form-group"><label for="joinPassword">Sua senha</label><input type="password" id="joinPassword" placeholder="Sua senha"></div><div class="form-group"><label>Escolha o grupo</label><div id="joinGroupList"><p class="login-hint">Carregando grupos...</p></div></div><button class="btn-primary" onclick="doJoinGroup()">Pedir acesso</button><p class="login-hint"><a href="#" onclick="showGroupChoice(); return false;">Voltar</a></p></div><div id="joinGroupLoading" style="display:none;"><p>Solicitando...</p></div><div id="joinGroupStatus"></div></div></div></div>';
+    state.JOIN_SLUG = null;
     loadJoinGroups();
 }
 
-/* Lista de grupos para o novo usuario escolher onde pedir acesso. */
-function loadJoinGroups() {
-    var box = document.getElementById('joinGroupList');
-    if (!box) return;
-    supabaseClient.from('grupos').select('id, nome, slug, logo_url').order('nome').then(function(r) {
-        if (r.error) { box.innerHTML = '<p class="login-error">Erro ao carregar grupos: ' + r.error.message + '</p>'; return; }
-        if (!r.data || !r.data.length) { box.innerHTML = '<p class="login-hint">Nenhum grupo disponivel.</p>'; return; }
-        box.innerHTML = r.data.map(function(g) {
-            var logo = g.logo_url || SYSTEM_LOGO;
-            return '<div class="group-option" data-slug="' + g.slug + '" onclick="selectJoinGroup(\'' + g.slug + '\', this)"><img src="' + escAttr(logo) + '" alt="" width="40" height="40"><span>' + escAttr(g.nome) + '</span></div>';
-        }).join('');
-    }).catch(function() { box.innerHTML = '<p class="login-error">Erro ao carregar grupos.</p>'; });
-}
-
-function selectJoinGroup(slug, el) {
-    window.JOIN_SLUG = slug;
-    var items = document.querySelectorAll('#joinGroupList .group-option');
-    items.forEach(function(i) { i.classList.remove('selected'); });
-    if (el) el.classList.add('selected');
-}
-
-function doLogin() {
+export function doLogin() {
     var email = document.getElementById('loginEmail').value.trim();
     var password = document.getElementById('loginPassword').value;
-    if (!email || !email.includes('@')) { alert('Informe um e-mail valido.'); return; }
+    if (!email || !email.includes('@')) { alert('Informe um e-mail válido.'); return; }
     if (!password) { alert('Informe sua senha.'); return; }
     var formEl = document.getElementById('loginForm');
     var loadingEl = document.getElementById('loginLoading');
@@ -922,7 +277,7 @@ function doLogin() {
         if (loadingEl) loadingEl.style.display = 'none';
         if (formEl) formEl.style.display = 'block';
         if (result.notFound) {
-            if (statusEl) statusEl.innerHTML = '<p class="login-error">E-mail nao encontrado. Cadastre-se abaixo.</p>';
+            if (statusEl) statusEl.innerHTML = '<p class="login-error">E-mail não encontrado. Cadastre-se abaixo.</p>';
             setTimeout(function() { showSignupForm(email); }, 1200);
         } else if (statusEl) {
             statusEl.innerHTML = '<p class="login-error">Erro: ' + result.error + '</p>';
@@ -930,13 +285,13 @@ function doLogin() {
     });
 }
 
-function doSignup() {
+export function doSignup() {
     var username = document.getElementById('signupUsername').value.trim();
     var email = document.getElementById('signupEmail').value.trim();
     var password = document.getElementById('signupPassword').value;
-    if (!username) { alert('Informe seu nome de usuario.'); return; }
-    if (!email || !email.includes('@')) { alert('Informe um e-mail valido.'); return; }
-    if (!password || password.length < 6) { alert('A senha deve ter no minimo 6 caracteres.'); return; }
+    if (!username) { alert('Informe seu nome de usuário.'); return; }
+    if (!email || !email.includes('@')) { alert('Informe um e-mail válido.'); return; }
+    if (!password || password.length < 6) { alert('A senha deve ter no mínimo 6 caracteres.'); return; }
     var formEl = document.getElementById('signupForm');
     var loadingEl = document.getElementById('signupLoading');
     var statusEl = document.getElementById('signupStatus');
@@ -959,15 +314,15 @@ function doSignup() {
     });
 }
 
-function doCreateGroup() {
+export function doCreateGroup() {
     var nomeGrupo = document.getElementById('groupName').value.trim();
     var logoTyped = document.getElementById('groupLogo').value.trim();
     var username = document.getElementById('newUsername').value.trim();
     var email = document.getElementById('newEmail').value.trim();
     var password = document.getElementById('newPassword').value;
     if (!nomeGrupo) { alert('Informe o nome do grupo.'); return; }
-    if (!username) { alert('Informe seu nome de usuario.'); return; }
-    if (!email || !email.includes('@')) { alert('Informe um e-mail valido.'); return; }
+    if (!username) { alert('Informe seu nome de usuário.'); return; }
+    if (!email || !email.includes('@')) { alert('Informe um e-mail válido.'); return; }
     if (!password) { alert('Informe sua senha.'); return; }
     var formEl = document.getElementById('createGroupForm');
     var loadingEl = document.getElementById('createGroupLoading');
@@ -975,37 +330,41 @@ function doCreateGroup() {
     if (formEl) formEl.style.display = 'none';
     if (loadingEl) loadingEl.style.display = 'block';
     if (statusEl) statusEl.innerHTML = '';
+
     var finish = function(finalLogo) {
-        window.LOGO_FILE = null;
-        createUserAndGroup(email, password, username, nomeGrupo, finalLogo).then(function(result) {
+        state.LOGO_FILE = null;
+        createUserAndGroup(email, password, username, nomeGrupo, finalLogo, signupUser, ensureSession).then(function(result) {
             if (loadingEl) loadingEl.style.display = 'none';
             if (formEl) formEl.style.display = 'block';
             if (statusEl) statusEl.innerHTML = result.success ? '<p class="login-success">Grupo criado! Entrando...</p>' : '<p class="login-error">Erro: ' + result.error + '</p>';
-            if (result.success) { setTimeout(function() { onAuthStateChanged(AUTH.user); }, 1500); }
+            if (result.success) { setTimeout(function() { onAuthStateChanged(state.AUTH.user); }, 1500); }
         });
     };
-    if (window.LOGO_FILE) {
-        uploadLogo(window.LOGO_FILE).then(function(up) {
-            if (!up.success) {
-                if (loadingEl) loadingEl.style.display = 'none';
-                if (formEl) formEl.style.display = 'block';
-                if (statusEl) statusEl.innerHTML = '<p class="login-error">Erro no upload da logo: ' + up.error + '</p>';
-                return;
-            }
-            finish(up.url);
+
+    if (state.LOGO_FILE) {
+        import('./grupos.js').then(function(m) {
+            m.uploadLogo(state.LOGO_FILE).then(function(up) {
+                if (!up.success) {
+                    if (loadingEl) loadingEl.style.display = 'none';
+                    if (formEl) formEl.style.display = 'block';
+                    if (statusEl) statusEl.innerHTML = '<p class="login-error">Erro no upload da logo: ' + up.error + '</p>';
+                    return;
+                }
+                finish(up.url);
+            });
         });
     } else {
         finish(logoTyped || SYSTEM_LOGO);
     }
 }
 
-function doJoinGroup() {
+export function doJoinGroup() {
     var username = document.getElementById('joinUsername').value.trim();
     var email = document.getElementById('joinEmail').value.trim();
     var password = document.getElementById('joinPassword').value;
-    var slug = window.JOIN_SLUG;
-    if (!username) { alert('Informe seu nome de usuario.'); return; }
-    if (!email || !email.includes('@')) { alert('Informe um e-mail valido.'); return; }
+    var slug = state.JOIN_SLUG;
+    if (!username) { alert('Informe seu nome de usuário.'); return; }
+    if (!email || !email.includes('@')) { alert('Informe um e-mail válido.'); return; }
     if (!password) { alert('Informe sua senha.'); return; }
     if (!slug) { alert('Escolha um grupo na lista.'); return; }
     var formEl = document.getElementById('joinGroupForm');
@@ -1014,78 +373,10 @@ function doJoinGroup() {
     if (formEl) formEl.style.display = 'none';
     if (loadingEl) loadingEl.style.display = 'block';
     if (statusEl) statusEl.innerHTML = '';
-    joinGroup(email, password, username, slug).then(function(result) {
+    joinGroup(email, password, username, slug, signupUser, ensureSession).then(function(result) {
         if (loadingEl) loadingEl.style.display = 'none';
         if (formEl) formEl.style.display = 'block';
-        if (statusEl) statusEl.innerHTML = result.success ? '<p class="login-success">Pedido enviado! Aguarde aprovacao do owner.</p>' : '<p class="login-error">Erro: ' + result.error + '</p>';
-        if (result.success) { setTimeout(function() { onAuthStateChanged(AUTH.user); }, 1500); }
+        if (statusEl) statusEl.innerHTML = result.success ? '<p class="login-success">Pedido enviado! Aguarde aprovação do owner.</p>' : '<p class="login-error">Erro: ' + result.error + '</p>';
+        if (result.success) { setTimeout(function() { onAuthStateChanged(state.AUTH.user); }, 1500); }
     });
-}
-
-document.addEventListener('DOMContentLoaded', function() { renderLoginScreen(); initAuth(); registerServiceWorker(); initInstallPrompt(); });
-
-/* PWA: registra o service worker e gerencia o banner "Instalar aplicativo". */
-function registerServiceWorker() {
-    if (!('serviceWorker' in navigator)) return;
-    window.addEventListener('load', function() {
-        navigator.serviceWorker.register('sw.js').catch(function(err) { console.warn('SW nao registrado:', err); });
-    });
-}
-
-var deferredInstallPrompt = null;
-
-function isIosDevice() { return /iphone|ipad|ipod/i.test(navigator.userAgent); }
-function isStandalone() { return window.matchMedia('(display-mode: standalone)').matches || window.navigator.standalone === true; }
-
-function initInstallPrompt() {
-    if (isStandalone()) return;
-    try { if (localStorage.getItem('installDismissed') === '1') return; } catch (e) {}
-    window.addEventListener('beforeinstallprompt', function(e) {
-        e.preventDefault();
-        deferredInstallPrompt = e;
-        showInstallBanner('Instale o aplicativo', 'Instalar');
-    });
-    window.addEventListener('appinstalled', function() {
-        deferredInstallPrompt = null;
-        hideInstallBanner();
-    });
-    /* iOS nao tem prompt automatico: mostra instrucao manual apos 2s. */
-    if (isIosDevice()) {
-        setTimeout(function() {
-            if (isStandalone() || deferredInstallPrompt) return;
-            showInstallBanner('Toque em Compartilhar e "Adicionar a Tela de Inicio"', 'OK');
-        }, 2000);
-    }
-}
-
-function showInstallBanner(hint, btnLabel) {
-    var banner = document.getElementById('installBanner');
-    var hintEl = document.getElementById('installHint');
-    var btn = document.getElementById('btnInstall');
-    if (!banner) return;
-    if (hintEl) hintEl.textContent = hint;
-    if (btn) btn.textContent = btnLabel;
-    banner.style.display = 'flex';
-}
-
-function hideInstallBanner() {
-    var banner = document.getElementById('installBanner');
-    if (banner) banner.style.display = 'none';
-}
-
-function doInstall() {
-    if (deferredInstallPrompt) {
-        deferredInstallPrompt.prompt();
-        deferredInstallPrompt.userChoice.then(function() {
-            deferredInstallPrompt = null;
-            hideInstallBanner();
-        }).catch(function() { hideInstallBanner(); });
-        return;
-    }
-    dismissInstall();
-}
-
-function dismissInstall() {
-    try { localStorage.setItem('installDismissed', '1'); } catch (e) {}
-    hideInstallBanner();
 }
